@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { REGISTRY, type TemplateEntry } from './registry.js'
-import { resolveHome } from './config.js'
+import { loadConfig, resolveHome } from './config.js'
 import { PLAYWRIGHT_CONFIG, SMOKE_SPEC, claudeMd } from './defaults.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -56,14 +56,24 @@ export function nextNumber(fwDir: string): string {
   return String(max + 1).padStart(4, '0')
 }
 
-/** Resolve a fiddle dir by exact name or by the friendly suffix (`Foo` → `fiddle-0003-Foo`). */
+/**
+ * Resolve a fiddle dir by NUMBER (`1` / `01` / `0001` → `fiddle-0001-*`), exact dir name,
+ * or friendly name (`Foo` → `fiddle-0003-Foo`). Number is the easy path — that's why they're numbered.
+ */
 export function resolveFiddle(framework: string, name: string): string {
   const fwDir = frameworkDir(framework)
-  const exact = path.join(fwDir, name)
-  if (fs.existsSync(exact)) return exact
-  const match = fs
-    .readdirSync(fwDir)
-    .find((d) => d === name || d.endsWith(`-${name}`) || d.replace(/^fiddle-\d+-/, '') === name)
+  const dirs = fs.existsSync(fwDir) ? fs.readdirSync(fwDir) : []
+  if (/^\d+$/.test(name)) {
+    const n = parseInt(name, 10)
+    const byNum = dirs.find((d) => {
+      const m = d.match(/^fiddle-(\d+)-/)
+      return m ? parseInt(m[1], 10) === n : false
+    })
+    if (byNum) return path.join(fwDir, byNum)
+  }
+  const match = dirs.find(
+    (d) => d === name || d.endsWith(`-${name}`) || d.replace(/^fiddle-\d+-/, '') === name
+  )
   if (!match) throw new Error(`no fiddle "${name}" under ${framework}. Try \`fiddle list ${framework}\`.`)
   return path.join(fwDir, match)
 }
@@ -137,5 +147,32 @@ function safeReaddir(dir: string): string[] {
     return fs.readdirSync(dir).filter((d) => !d.startsWith('.'))
   } catch {
     return []
+  }
+}
+
+/** Fire-and-forget a detached GUI/terminal launch; never blocks or throws. */
+function spawnDetached(cmd: string, args: string[]): void {
+  try {
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true })
+    child.on('error', () => {})
+    child.unref()
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Open a fiddle in the configured editor (default: VS Code `code`). */
+export function openInEditor(dir: string): void {
+  spawnDetached(loadConfig().editor || 'code', [dir])
+}
+
+/** Open a terminal at the fiddle dir for interacting with it. */
+export function openTerminal(dir: string): void {
+  if (process.platform === 'darwin') {
+    spawnDetached('open', ['-a', loadConfig().terminal || 'Terminal', dir])
+  } else if (process.platform === 'win32') {
+    spawnDetached('cmd', ['/c', 'start', 'cmd', '/K', `cd /d "${dir}"`])
+  } else {
+    spawnDetached('x-terminal-emulator', ['--working-directory', dir])
   }
 }

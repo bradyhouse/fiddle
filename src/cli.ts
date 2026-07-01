@@ -13,6 +13,8 @@ import {
   injectDefaults,
   listCollection,
   nextNumber,
+  openInEditor,
+  openTerminal,
   readMeta,
   resolveFiddle,
   runShell,
@@ -172,6 +174,21 @@ program
     console.log(banner(`start · ${friendly(dir)}`))
     console.log(c.dim(`  ${meta.start}   (Ctrl+C to stop)\n`))
     await runShell(meta.start, dir)
+  })
+
+// ── edit ──────────────────────────────────────────────────────────────────────
+program
+  .command('edit')
+  .description('open a fiddle in your editor + a terminal')
+  .argument('[framework]')
+  .argument('[name]', 'fiddle — by number (1 / 0001) or name')
+  .action((framework, name, opts, cmd) => {
+    if (!framework || !name) return void (console.log(banner('edit')), cmd.outputHelp())
+    const dir = resolveFiddle(framework, name)
+    console.log(banner(`edit · ${friendly(dir)}`))
+    openInEditor(dir)
+    openTerminal(dir)
+    console.log(`  ✓ opened ${c.green(path.basename(dir))} in editor + terminal\n`)
   })
 
 // ── list ──────────────────────────────────────────────────────────────────────
