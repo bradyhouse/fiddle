@@ -11,39 +11,47 @@ export interface TemplateEntry {
   label: string
 }
 
+/** Shorthand for a Vite-scaffolded framework (delegate → the official create-vite template). */
+const vite = (template: string, label: string): TemplateEntry => ({
+  provider: 'delegate',
+  run: `npm create vite@latest {name} -- --template ${template}`,
+  start: 'npm run dev',
+  label
+})
+
+/** Shorthand for a fiddle-shipped (builtin) template. */
+const builtin = (dir: string, label: string, start = 'npm run dev'): TemplateEntry => ({
+  provider: 'builtin',
+  dir,
+  start,
+  label
+})
+
 /**
  * The provider registry — the heart of fiddle's "both" model.
  *
  * Frameworks with a canonical scaffolder DELEGATE to it (always current, zero
- * template maintenance); the rest ship a curated BUILTIN template — which is
- * exactly where the ecosystem has no `create-X` and a good starter has value.
+ * template maintenance); the rest ship a curated BUILTIN template — exactly
+ * where the ecosystem has no `create-X` and a good starter has value.
  *
- * Adding a framework is one row: a `run` command (delegate) or a `dir` under
- * `templates/` (builtin).
+ * Adding a framework is one row.
  */
 export const REGISTRY: Record<string, TemplateEntry> = {
-  react: {
-    provider: 'delegate',
-    run: 'npm create vite@latest {name} -- --template react-ts',
-    start: 'npm run dev',
-    label: 'React + Vite (TS)'
-  },
-  vue: {
-    provider: 'delegate',
-    run: 'npm create vite@latest {name} -- --template vue-ts',
-    start: 'npm run dev',
-    label: 'Vue 3 + Vite (TS)'
-  },
-  svelte: {
-    provider: 'delegate',
-    run: 'npm create vite@latest {name} -- --template svelte-ts',
-    start: 'npm run dev',
-    label: 'Svelte + Vite (TS)'
-  },
-  three: {
-    provider: 'builtin',
-    dir: 'three',
-    start: 'npm run dev',
-    label: 'three.js + Vite'
-  }
+  // ── delegate → official Vite templates (always current) ──
+  react: vite('react-ts', 'React + Vite (TS)'),
+  vue: vite('vue-ts', 'Vue 3 + Vite (TS)'),
+  svelte: vite('svelte-ts', 'Svelte + Vite (TS)'),
+  solid: vite('solid-ts', 'Solid + Vite (TS)'),
+  preact: vite('preact-ts', 'Preact + Vite (TS)'),
+  lit: vite('lit-ts', 'Lit + Vite (TS)'),
+  qwik: vite('qwik-ts', 'Qwik + Vite (TS)'),
+  vanilla: vite('vanilla-ts', 'Vanilla + Vite (TS)'),
+
+  // ── builtin → fiddle's own curated templates (no canonical create-X) ──
+  three: builtin('three', 'three.js + Vite'),
+  d3: builtin('d3', 'D3 + Vite'),
+  rxjs: builtin('rxjs', 'RxJS + Vite'),
+  svg: builtin('svg', 'SVG animation + Vite'),
+  tween: builtin('tween', 'tween.js + Vite'),
+  node: builtin('node', 'Node script', 'node index.mjs')
 }
