@@ -1,0 +1,53 @@
+{
+  "name": "@bradyhouse/fiddle",
+  "version": "0.1.0",
+  "description": "Scaffold and run throwaway framework sandboxes ('fiddles') — delegates to official scaffolders (Vite, Angular CLI…) where they exist, ships curated templates where they don't.",
+  "type": "module",
+  "bin": {
+    "fiddle": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "fiddle": "node dist/cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "cli",
+    "scaffold",
+    "sandbox",
+    "fiddle",
+    "starter",
+    "template",
+    "generator",
+    "vite",
+    "react",
+    "vue",
+    "three",
+    "d3"
+  ],
+  "author": "Brady House <bradyhouse@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bradyhouse/fiddle.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bradyhouse/fiddle/issues"
+  },
+  "homepage": "https://github.com/bradyhouse/fiddle#readme",
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}
