@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises'
 import fs from 'node:fs'
 import path from 'node:path'
 import { REGISTRY } from './registry.js'
-import { CONFIG_FILE, loadConfig, setConfigKey } from './config.js'
+import { CONFIG_FILE, CONFIG_KEYS, loadConfig, setConfigKey } from './config.js'
 import {
   copyFiddle,
   copyTemplate,
@@ -47,12 +47,33 @@ program
 const config = program.command('config').description('view or set fiddle configuration')
 config
   .command('list')
-  .description('show all config values')
+  .description('show every setting — including ones you can set but haven\'t')
   .action(() => {
     const cfg = loadConfig()
     console.log(banner('config'))
-    console.log('  file: ' + c.dim(CONFIG_FILE) + '\n')
-    for (const [k, v] of Object.entries(cfg)) console.log('  ' + c.green(k.padEnd(14)) + (v ?? c.dim('(unset)')))
+    console.log(
+      '  file: ' + c.dim(CONFIG_FILE) + (fs.existsSync(CONFIG_FILE) ? '' : c.dim('  (not created yet)')) + '\n'
+    )
+    for (const { key, desc, default: def } of CONFIG_KEYS) {
+      const v = cfg[key]
+      const value =
+        v !== undefined && v !== def
+          ? c.green(v)
+          : v !== undefined
+            ? c.green(v) + c.dim('  (default)')
+            : def
+              ? c.dim(def + '  (default)')
+              : c.dim('(unset)')
+      console.log('  ' + c.bold(key.padEnd(13)) + value)
+      console.log('  ' + ' '.repeat(13) + c.dim(desc))
+    }
+    // surface any custom keys the user set that aren't in the known registry
+    const known = new Set(CONFIG_KEYS.map((k) => k.key))
+    const extra = Object.entries(cfg).filter(([k]) => !known.has(k))
+    if (extra.length) {
+      console.log('\n  ' + c.dim('custom:'))
+      for (const [k, v] of extra) console.log('  ' + c.bold(k.padEnd(13)) + c.green(String(v)))
+    }
     console.log('')
   })
 config

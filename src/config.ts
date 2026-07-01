@@ -17,6 +17,19 @@ const DEFAULTS: FiddleConfig = {
   home: path.join(os.homedir(), 'fiddles')
 }
 
+/** Every setting the CLI reads — so `config list` can show unset ones too. */
+export interface ConfigKeyInfo {
+  key: string
+  desc: string
+  default?: string
+}
+export const CONFIG_KEYS: ConfigKeyInfo[] = [
+  { key: 'home', desc: 'where all fiddles collect, organized by framework', default: DEFAULTS.home },
+  { key: 'publishRepo', desc: 'portfolio publish target — a git working dir' },
+  { key: 'editor', desc: 'editor command opened by `fiddle edit`', default: 'code' },
+  { key: 'terminal', desc: 'terminal app spawned by `fiddle edit` (macOS)', default: 'Terminal' }
+]
+
 /** The persisted config (file + defaults). */
 export function loadConfig(): FiddleConfig {
   try {
