@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises'
 import fs from 'node:fs'
 import path from 'node:path'
 import { REGISTRY } from './registry.js'
-import { CONFIG_FILE, CONFIG_KEYS, loadConfig, setConfigKey } from './config.js'
+import { CONFIG_FILE, CONFIG_KEYS, loadConfig, resolveHome, setConfigKey } from './config.js'
 import {
   copyFiddle,
   copyTemplate,
@@ -16,6 +16,7 @@ import {
   nextNumber,
   openInEditor,
   openTerminal,
+  openUrl,
   readMeta,
   resolveFiddle,
   runShell,
@@ -24,6 +25,7 @@ import {
 import { claudeMd } from './defaults.js'
 import { buildManifest, shellHtml } from './portfolio.js'
 import { captureFiddle } from './screenshot.js'
+import { serveDir } from './serve.js'
 import { banner, c, nope } from './ui.js'
 
 const isBrowser = (start: string) => !start.startsWith('node')
@@ -279,6 +281,76 @@ program
     console.log(`\n  ✓ built ${c.green(String(all.length))}\n`)
   })
 
+/**
+ * Build every showcase (browser) fiddle into `repo`, copy each dist into
+ * `repo/f/<fw>/<name>/`, capture thumbnails, and (re)generate index.html +
+ * manifest.json. Returns the number of fiddles assembled (0 if none).
+ * Shared by `publish` (→ a git repo) and `preview` (→ a scratch dir).
+ */
+async function assemblePortfolio(repo: string, screenshots: boolean): Promise<number> {
+  const showcase = listCollection().filter((it) => {
+    try {
+      return isBrowser(readMeta(it.dir).start)
+    } catch {
+      return false
+    }
+  })
+  if (!showcase.length) {
+    console.log(c.dim('  (no showcase-able fiddles yet — `fiddle create <framework> <name>`)\n'))
+    return 0
+  }
+  fs.mkdirSync(repo, { recursive: true })
+  const items: { framework: string; name: string; friendly: string; hasThumb: boolean }[] = []
+  for (const it of showcase) {
+    process.stdout.write(c.dim(`  ${it.framework}/${it.name}  build`))
+    if (!fs.existsSync(path.join(it.dir, 'node_modules'))) await runShell('npm install', it.dir)
+    await runShell('npm run build -- --base=./', it.dir)
+    const dest = path.join(repo, 'f', it.framework, it.name)
+    fs.rmSync(dest, { recursive: true, force: true })
+    fs.mkdirSync(dest, { recursive: true })
+    fs.cpSync(path.join(it.dir, 'dist'), dest, { recursive: true })
+    let hasThumb = false
+    if (screenshots) {
+      process.stdout.write(c.dim(' · shot'))
+      fs.mkdirSync(path.join(repo, 'thumbs'), { recursive: true })
+      hasThumb = await captureFiddle(it.dir, path.join(repo, 'thumbs', `${it.framework}__${it.name}.png`))
+    }
+    console.log(c.dim(hasThumb ? ' ✓' : ' ✓ (no shot)'))
+    items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb })
+  }
+  const manifest = buildManifest(items)
+  fs.writeFileSync(path.join(repo, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest))
+  return manifest.length
+}
+
+// ── preview ──────────────────────────────────────────────────────────────────────
+program
+  .command('preview')
+  .description('build the portfolio into a scratch dir and serve it locally — no config, no push')
+  .option('-p, --port <n>', 'port to serve on', '4321')
+  .option('--no-screenshots', 'skip auto-thumbnails (faster)')
+  .option('--no-open', "don't open the browser")
+  .action(async (opts) => {
+    const dir = path.join(resolveHome(), '.preview')
+    console.log(banner('preview'))
+    const n = await assemblePortfolio(dir, opts.screenshots)
+    if (!n) return
+    const port = parseInt(opts.port, 10) || 4321
+    const server = await serveDir(dir, port)
+    const url = `http://localhost:${port}`
+    console.log(`\n  ▸ ${c.green(String(n))} fiddles live at ${c.green(url)}`)
+    console.log(c.dim('  this is a local preview — run `fiddle publish` to ship it.  Ctrl-C to stop\n'))
+    if (opts.open) openUrl(url)
+    await new Promise<void>((resolve) => {
+      process.on('SIGINT', () => {
+        server.close()
+        console.log(c.dim('\n  bye ʕ•ᴥ•ʔ\n'))
+        resolve()
+      })
+    })
+  })
+
 // ── publish ────────────────────────────────────────────────────────────────────
 program
   .command('publish')
@@ -287,40 +359,11 @@ program
   .option('--no-push', 'assemble but do not git commit/push')
   .action(async (opts) => {
     const repo = process.env.FIDDLE_PUBLISH_REPO || loadConfig().publishRepo
-    if (!repo) throw new Error('no target — run `fiddle config set publishRepo <dir>` first')
+    if (!repo) throw new Error('no target — run `fiddle config set publishRepo <dir>` first (or `fiddle preview` to look first)')
     console.log(banner('publish'))
-    const showcase = listCollection().filter((it) => {
-      try {
-        return isBrowser(readMeta(it.dir).start)
-      } catch {
-        return false
-      }
-    })
-    if (!showcase.length) return void console.log(c.dim('  (no showcase-able fiddles yet)\n'))
-
-    const items: { framework: string; name: string; friendly: string; hasThumb: boolean }[] = []
-    for (const it of showcase) {
-      process.stdout.write(c.dim(`  ${it.framework}/${it.name}  build`))
-      if (!fs.existsSync(path.join(it.dir, 'node_modules'))) await runShell('npm install', it.dir)
-      await runShell('npm run build -- --base=./', it.dir)
-      const dest = path.join(repo, 'f', it.framework, it.name)
-      fs.rmSync(dest, { recursive: true, force: true })
-      fs.mkdirSync(dest, { recursive: true })
-      fs.cpSync(path.join(it.dir, 'dist'), dest, { recursive: true })
-      let hasThumb = false
-      if (opts.screenshots) {
-        process.stdout.write(c.dim(' · shot'))
-        fs.mkdirSync(path.join(repo, 'thumbs'), { recursive: true })
-        hasThumb = await captureFiddle(it.dir, path.join(repo, 'thumbs', `${it.framework}__${it.name}.png`))
-      }
-      console.log(c.dim(hasThumb ? ' ✓' : ' ✓ (no shot)'))
-      items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb })
-    }
-
-    const manifest = buildManifest(items)
-    fs.writeFileSync(path.join(repo, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
-    fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest))
-    console.log(`\n  ✓ ${c.green(String(manifest.length))} fiddles → ${c.dim(repo)}`)
+    const n = await assemblePortfolio(repo, opts.screenshots)
+    if (!n) return
+    console.log(`\n  ✓ ${c.green(String(n))} fiddles → ${c.dim(repo)}`)
 
     if (opts.push && fs.existsSync(path.join(repo, '.git'))) {
       await runShell('git add index.html manifest.json f thumbs && git commit -m "fiddle publish" && git push', repo).catch(

@@ -173,6 +173,13 @@ function spawnDetached(cmd: string, args: string[]): void {
   }
 }
 
+/** Open a URL in the default browser (best-effort, detached). */
+export function openUrl(url: string): void {
+  if (process.platform === 'darwin') spawnDetached('open', [url])
+  else if (process.platform === 'win32') spawnDetached('cmd', ['/c', 'start', '', url])
+  else spawnDetached('xdg-open', [url])
+}
+
 /** Open a fiddle in the configured editor (default: VS Code `code`). */
 export function openInEditor(dir: string): void {
   spawnDetached(loadConfig().editor || 'code', [dir])
