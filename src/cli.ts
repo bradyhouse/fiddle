@@ -21,6 +21,8 @@ import {
   writeMeta
 } from './core.js'
 import { claudeMd } from './defaults.js'
+import { buildManifest, shellHtml } from './portfolio.js'
+import { captureFiddle } from './screenshot.js'
 import { banner, c, nope } from './ui.js'
 
 const isBrowser = (start: string) => !start.startsWith('node')
@@ -209,6 +211,75 @@ program
     for (const [fw, names] of Object.entries(byFw)) {
       console.log('  ' + c.green(fw) + c.dim(`  (${names.length})`))
       for (const n of names.sort()) console.log('    ' + n)
+    }
+    console.log('')
+  })
+
+// ── build ──────────────────────────────────────────────────────────────────────
+program
+  .command('build')
+  .description('build a fiddle for showcase (npm run build)')
+  .argument('[framework]')
+  .argument('[name]')
+  .action(async (framework, name, opts, cmd) => {
+    if (!framework || !name) return void (console.log(banner('build')), cmd.outputHelp())
+    const dir = resolveFiddle(framework, name)
+    if (!isBrowser(readMeta(dir).start)) throw new Error(`${friendly(dir)} is a node fiddle — nothing to showcase`)
+    console.log(banner(`build · ${friendly(dir)}`))
+    if (!fs.existsSync(path.join(dir, 'node_modules'))) await runShell('npm install', dir)
+    await runShell('npm run build -- --base=./', dir) // relative base → works under /f/<fw>/<name>/
+    console.log(`\n  ✓ built → ${c.green('dist/')}\n`)
+  })
+
+// ── publish ────────────────────────────────────────────────────────────────────
+program
+  .command('publish')
+  .description('build every fiddle, regenerate the portfolio shell, and push')
+  .option('--no-screenshots', 'skip auto-thumbnails')
+  .option('--no-push', 'assemble but do not git commit/push')
+  .action(async (opts) => {
+    const repo = process.env.FIDDLE_PUBLISH_REPO || loadConfig().publishRepo
+    if (!repo) throw new Error('no target — run `fiddle config set publishRepo <dir>` first')
+    console.log(banner('publish'))
+    const showcase = listCollection().filter((it) => {
+      try {
+        return isBrowser(readMeta(it.dir).start)
+      } catch {
+        return false
+      }
+    })
+    if (!showcase.length) return void console.log(c.dim('  (no showcase-able fiddles yet)\n'))
+
+    const items: { framework: string; name: string; friendly: string; hasThumb: boolean }[] = []
+    for (const it of showcase) {
+      process.stdout.write(c.dim(`  ${it.framework}/${it.name}  build`))
+      if (!fs.existsSync(path.join(it.dir, 'node_modules'))) await runShell('npm install', it.dir)
+      await runShell('npm run build -- --base=./', it.dir)
+      const dest = path.join(repo, 'f', it.framework, it.name)
+      fs.rmSync(dest, { recursive: true, force: true })
+      fs.mkdirSync(dest, { recursive: true })
+      fs.cpSync(path.join(it.dir, 'dist'), dest, { recursive: true })
+      let hasThumb = false
+      if (opts.screenshots) {
+        process.stdout.write(c.dim(' · shot'))
+        fs.mkdirSync(path.join(repo, 'thumbs'), { recursive: true })
+        hasThumb = await captureFiddle(it.dir, path.join(repo, 'thumbs', `${it.framework}__${it.name}.png`))
+      }
+      console.log(c.dim(hasThumb ? ' ✓' : ' ✓ (no shot)'))
+      items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb })
+    }
+
+    const manifest = buildManifest(items)
+    fs.writeFileSync(path.join(repo, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+    fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest))
+    console.log(`\n  ✓ ${c.green(String(manifest.length))} fiddles → ${c.dim(repo)}`)
+
+    if (opts.push && fs.existsSync(path.join(repo, '.git'))) {
+      await runShell('git add index.html manifest.json f thumbs && git commit -m "fiddle publish" && git push', repo).catch(
+        () => console.log(c.dim('  (git push skipped — commit/push manually)'))
+      )
+    } else if (opts.push) {
+      console.log(c.dim('  (target is not a git repo — commit/push your portfolio yourself)'))
     }
     console.log('')
   })
