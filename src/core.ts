@@ -78,6 +78,18 @@ export function resolveFiddle(framework: string, name: string): string {
   return path.join(fwDir, match)
 }
 
+/** If the cwd is inside a fiddle (walking up to find a `.fiddle.json`), return its dir. */
+export function cwdFiddle(): string | null {
+  let dir = process.cwd()
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(dir, '.fiddle.json'))) return dir
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return null
+}
+
 export function copyTemplate(dir: string, target: string): void {
   fs.cpSync(path.join(TEMPLATES_DIR, dir), target, { recursive: true })
 }

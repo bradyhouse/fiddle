@@ -8,6 +8,7 @@ import { CONFIG_FILE, loadConfig, setConfigKey } from './config.js'
 import {
   copyFiddle,
   copyTemplate,
+  cwdFiddle,
   frameworkDir,
   getEntry,
   injectDefaults,
@@ -218,17 +219,43 @@ program
 // ── build ──────────────────────────────────────────────────────────────────────
 program
   .command('build')
-  .description('build a fiddle for showcase (npm run build)')
+  .description('build fiddle(s): the one you\'re in, one by name, or the whole collection')
   .argument('[framework]')
   .argument('[name]')
   .action(async (framework, name, opts, cmd) => {
-    if (!framework || !name) return void (console.log(banner('build')), cmd.outputHelp())
-    const dir = resolveFiddle(framework, name)
-    if (!isBrowser(readMeta(dir).start)) throw new Error(`${friendly(dir)} is a node fiddle — nothing to showcase`)
-    console.log(banner(`build · ${friendly(dir)}`))
-    if (!fs.existsSync(path.join(dir, 'node_modules'))) await runShell('npm install', dir)
-    await runShell('npm run build -- --base=./', dir) // relative base → works under /f/<fw>/<name>/
-    console.log(`\n  ✓ built → ${c.green('dist/')}\n`)
+    const buildOne = async (dir: string, quiet = false) => {
+      if (!isBrowser(readMeta(dir).start)) throw new Error(`${friendly(dir)} is a node fiddle — nothing to showcase`)
+      if (!quiet) console.log(banner(`build · ${friendly(dir)}`))
+      if (!fs.existsSync(path.join(dir, 'node_modules'))) await runShell('npm install', dir)
+      await runShell('npm run build -- --base=./', dir) // relative base → works under /f/<fw>/<name>/
+      if (!quiet) console.log(`\n  ✓ built → ${c.green('dist/')}\n`)
+    }
+
+    if (framework && name) return void (await buildOne(resolveFiddle(framework, name)))
+    if (framework) return void (console.log(banner('build')), cmd.outputHelp()) // a lone arg is ambiguous
+
+    // no args → the fiddle you're standing in, else the whole collection
+    const here = cwdFiddle()
+    if (here) return void (await buildOne(here))
+
+    const all = listCollection().filter((it) => {
+      try {
+        return isBrowser(readMeta(it.dir).start)
+      } catch {
+        return false
+      }
+    })
+    if (!all.length) {
+      console.log(banner('build'))
+      console.log(c.dim('  nothing to build — cd into a fiddle, or: fiddle build <framework> <name>\n'))
+      return
+    }
+    console.log(banner(`build · ${all.length} fiddles`))
+    for (const it of all) {
+      console.log(c.dim(`  ${it.framework}/${friendly(it.dir)}`))
+      await buildOne(it.dir, true)
+    }
+    console.log(`\n  ✓ built ${c.green(String(all.length))}\n`)
   })
 
 // ── publish ────────────────────────────────────────────────────────────────────
