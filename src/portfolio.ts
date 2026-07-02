@@ -8,10 +8,11 @@ export interface ManifestEntry {
   friendly: string // foo
   url: string // f/<framework>/<name>/index.html
   thumb: string | null // thumbs/<framework>__<name>.png
+  files: string[] // source files, relative to the fiddle dir (for the source view)
 }
 
 export function buildManifest(
-  items: { framework: string; name: string; friendly: string; hasThumb: boolean }[]
+  items: { framework: string; name: string; friendly: string; hasThumb: boolean; files?: string[] }[]
 ): ManifestEntry[] {
   return items
     .map((i) => ({
@@ -19,7 +20,8 @@ export function buildManifest(
       name: i.name,
       friendly: i.friendly,
       url: `f/${i.framework}/${i.name}/index.html`,
-      thumb: i.hasThumb ? `thumbs/${i.framework}__${i.name}.png` : null
+      thumb: i.hasThumb ? `thumbs/${i.framework}__${i.name}.png` : null,
+      files: i.files ?? []
     }))
     .sort((a, b) => a.framework.localeCompare(b.framework) || a.name.localeCompare(b.name))
 }
@@ -65,10 +67,20 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
   .item.active .lbl{color:var(--phos)}
   /* stage */
   main{position:relative;display:flex;flex-direction:column;min-width:0}
-  .bar{display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .bar{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--muted)}
   .bar .cur{color:var(--phos)}
-  .bar a{margin-left:auto;color:var(--phos-dim);text-decoration:none}.bar a:hover{color:var(--phos)}
-  iframe{flex:1;width:100%;border:0;background:#fff}
+  .toggle{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--phos-dim);background:transparent;border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
+  .toggle:hover{color:var(--phos);border-color:var(--phos-dim)}
+  .bar a{color:var(--phos-dim);text-decoration:none}.bar a:hover{color:var(--phos)}
+  .stage{flex:1;min-height:0;position:relative;padding:22px;background:radial-gradient(130% 90% at 50% 0%,#0d150d 0%,var(--ink) 72%)}
+  .stage iframe{width:100%;height:100%;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 0 0 1px rgba(51,255,51,.05),0 20px 55px rgba(0,0,0,.55)}
+  .code{display:none;position:absolute;inset:22px;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel);box-shadow:0 20px 55px rgba(0,0,0,.55)}
+  .tabs{display:flex;gap:2px;overflow-x:auto;background:var(--phos-bg);border-bottom:1px solid var(--line);padding:6px 6px 0;flex:none}
+  .tabs::-webkit-scrollbar{height:0}
+  .tab{font-family:var(--mono);font-size:11px;color:var(--muted);background:transparent;border:1px solid transparent;border-bottom:none;border-radius:6px 6px 0 0;padding:6px 10px;cursor:pointer;white-space:nowrap}
+  .tab:hover{color:var(--phos)}
+  .tab.active{color:var(--phos);background:var(--panel);border-color:var(--line)}
+  .code pre{margin:0;flex:1;overflow:auto;padding:16px 18px;font-family:var(--mono);font-size:12.5px;line-height:1.55;color:var(--text);white-space:pre;tab-size:2}
   .empty{flex:1;display:grid;place-items:center;color:var(--muted);font-family:var(--mono);font-size:13px}
   aside::-webkit-scrollbar{width:8px}aside::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
 </style>
@@ -80,21 +92,58 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
     <div id="nav"></div>
   </aside>
   <main>
-    <div class="bar"><span class="cur" id="cur">—</span><a id="pop" href="#" target="_blank" style="display:none">open ↗</a></div>
+    <div class="bar">
+      <span class="cur" id="cur">—</span>
+      <button class="toggle" id="codeBtn" onclick="toggleCode()" style="display:none">&lt;/&gt; source</button>
+      <a id="pop" href="#" target="_blank" style="display:none">open ↗</a>
+    </div>
     <div class="empty" id="empty">select a fiddle from the left</div>
-    <iframe id="frame" style="display:none"></iframe>
+    <div class="stage" id="stage" style="display:none">
+      <iframe id="frame"></iframe>
+      <div class="code" id="code"><div class="tabs" id="tabs"></div><pre id="src"></pre></div>
+    </div>
   </main>
 <script>
   const FIDDLES = ${DATA};
   const nav = document.getElementById('nav'), frame = document.getElementById('frame'),
-        empty = document.getElementById('empty'), cur = document.getElementById('cur'), pop = document.getElementById('pop');
+        empty = document.getElementById('empty'), cur = document.getElementById('cur'), pop = document.getElementById('pop'),
+        stage = document.getElementById('stage'), code = document.getElementById('code'),
+        tabs = document.getElementById('tabs'), src = document.getElementById('src'), codeBtn = document.getElementById('codeBtn');
+  let current = null, codeOn = false;
+  function setView(showCode){
+    codeOn = showCode;
+    code.style.display = showCode ? 'flex' : 'none';
+    frame.style.display = showCode ? 'none' : 'block';
+    codeBtn.textContent = showCode ? '▶ preview' : '</> source';
+  }
   function open(f, el){
+    current = f;
     document.querySelectorAll('.item.active').forEach(e=>e.classList.remove('active'));
     if(el){ el.classList.add('active'); const g=el.closest('.fw-group'); if(g) g.classList.add('open'); el.scrollIntoView({block:'nearest'}); }
-    empty.style.display='none'; frame.style.display='block'; frame.src=f.url;
+    empty.style.display='none'; stage.style.display='block';
+    setView(false); // always land on the preview
+    frame.src=f.url;
     cur.textContent = f.framework + ' / ' + f.friendly;
     pop.style.display='inline'; pop.href=f.url;
+    codeBtn.style.display = (f.files && f.files.length) ? 'inline' : 'none';
     location.hash = f.framework + '/' + f.name;
+  }
+  function toggleCode(){ if(current){ setView(!codeOn); if(codeOn) loadCode(current); } }
+  function loadCode(f){
+    const base = f.url.replace(/[^/]*$/, '');
+    const files = (f.files && f.files.length) ? f.files : ['index.html'];
+    tabs.innerHTML=''; src.textContent='loading…';
+    files.forEach((fp,i)=>{
+      const t=document.createElement('button'); t.className='tab'+(i===0?' active':''); t.textContent=fp;
+      t.onclick=()=>{ tabs.querySelectorAll('.tab.active').forEach(x=>x.classList.remove('active')); t.classList.add('active'); fetchFile(base+fp); };
+      tabs.appendChild(t);
+    });
+    fetchFile(base+files[0]);
+  }
+  async function fetchFile(url){
+    try{ const r=await fetch(url); src.textContent = r.ok ? await r.text() : '// '+r.status+' — '+url; }
+    catch(e){ src.textContent='// could not load '+url; }
+    src.scrollTop=0;
   }
   function itemEl(f){
     const it=document.createElement('div'); it.className='item'; it.dataset.key=f.framework+'/'+f.name;

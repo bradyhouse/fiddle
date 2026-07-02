@@ -463,6 +463,39 @@ function staticAssetsOk(dir: string): boolean {
   return true
 }
 
+const SRC_EXT = new Set([
+  '.html', '.htm', '.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx', '.vue', '.svelte',
+  '.css', '.scss', '.less', '.json', '.md', '.markdown', '.svg', '.xml', '.txt'
+])
+
+/** Text source files under `dir` (relative paths, index.html first), for the source view. */
+function sourceFiles(dir: string, max = 15): string[] {
+  const out: string[] = []
+  const walk = (d: string, rel = ''): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (out.length >= max) return
+      if (e.name.startsWith('.') || e.name === 'node_modules') continue
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (e.isDirectory()) walk(path.join(d, e.name), r)
+      else if (SRC_EXT.has(path.extname(e.name).toLowerCase())) {
+        try {
+          if (fs.statSync(path.join(d, e.name)).size <= 200_000) out.push(r)
+        } catch {
+          /* skip */
+        }
+      }
+    }
+  }
+  walk(dir)
+  return out.sort((a, b) => (a === 'index.html' ? -1 : b === 'index.html' ? 1 : a.localeCompare(b)))
+}
+
 /**
  * Assemble the whole collection into `repo` and (re)generate the portfolio.
  * Each fiddle is either **built** (has a build script; attempted when `doBuild`,
@@ -478,7 +511,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
     return { count: 0, staticCount: 0, built: 0, skipped: 0 }
   }
   fs.mkdirSync(repo, { recursive: true })
-  const items: { framework: string; name: string; friendly: string; hasThumb: boolean }[] = []
+  const items: { framework: string; name: string; friendly: string; hasThumb: boolean; files: string[] }[] = []
   let staticCount = 0
   let built = 0
   let skipped = 0
@@ -498,6 +531,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
     }
     const dest = path.join(repo, 'f', it.framework, it.name)
     let rendered = false
+    let files: string[] = []
 
     if (mode === 'build') {
       // Build fiddles are blank without their compiled bundle — build them, or
@@ -530,6 +564,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
       fs.rmSync(dest, { recursive: true, force: true })
       fs.mkdirSync(dest, { recursive: true })
       copyFiddle(it.dir, dest) // excludes node_modules/dist/.git/screenshot.png
+      files = sourceFiles(dest) // the copied source is browsable in the portfolio
       staticCount++
     }
 
@@ -538,7 +573,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
       fs.mkdirSync(path.join(repo, 'thumbs'), { recursive: true })
       hasThumb = await captureFiddle(it.dir, path.join(repo, 'thumbs', `${it.framework}__${it.name}.png`))
     }
-    items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb })
+    items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb, files })
   }
 
   const manifest = buildManifest(items)
