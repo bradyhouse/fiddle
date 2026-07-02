@@ -27,6 +27,33 @@ export function runShell(cmd: string, cwd: string): Promise<void> {
   })
 }
 
+/**
+ * Best-effort shell: resolves true on a clean exit, false on error / non-zero /
+ * timeout. Never throws, never inherits stdio. For publishing an archive where
+ * a decade-old `npm install` may fail or hang — we skip it and move on.
+ */
+export function tryShell(cmd: string, cwd: string, timeoutMs = 120_000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, { cwd, stdio: 'ignore', shell: true, detached: true })
+    const timer = setTimeout(() => {
+      try {
+        process.kill(-child.pid!, 'SIGKILL') // kill the whole process group (npm children)
+      } catch {
+        child.kill('SIGKILL')
+      }
+      resolve(false)
+    }, timeoutMs)
+    child.on('error', () => {
+      clearTimeout(timer)
+      resolve(false)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      resolve(code === 0)
+    })
+  })
+}
+
 export function getEntry(framework: string): TemplateEntry {
   const entry = REGISTRY[framework]
   if (!entry) {

@@ -3,6 +3,7 @@ import { Command } from 'commander'
 import { createInterface } from 'node:readline/promises'
 import { execSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { REGISTRY } from './registry.js'
 import { CONFIG_FILE, CONFIG_KEYS, loadConfig, resolveHome, setConfigKey } from './config.js'
@@ -22,6 +23,7 @@ import {
   readMeta,
   resolveFiddle,
   runShell,
+  tryShell,
   writeMeta
 } from './core.js'
 import { claudeMd } from './defaults.js'
@@ -183,22 +185,30 @@ program
       for (const name of fs.readdirSync(fwDir)) {
         const dir = path.join(fwDir, name)
         if (!fs.statSync(dir).isDirectory()) continue
-        const looksLikeFiddle =
-          /^fiddle-\d+-/.test(name) ||
-          fs.existsSync(path.join(dir, 'package.json')) ||
-          fs.existsSync(path.join(dir, 'index.html'))
-        if (!looksLikeFiddle) continue
+        // Only the fiddle-NNNN- convention — not any dir with an index.html
+        // (that false-matches build output like dist/, out/, coverage/).
+        if (!/^fiddle-\d+-/.test(name)) continue
         if (fs.existsSync(path.join(dir, '.fiddle.json')) && !opts.force) {
           skipped++
           continue
         }
         const start = inferStart(dir)
         if (!opts.dryRun) {
-          let createdAt: string
+          // Preserve an existing createdAt on --force re-adopt — writing
+          // .fiddle.json bumps the dir mtime, so re-deriving it would clobber
+          // the real age. Only derive from mtime on a first, fresh adopt.
+          let createdAt: string | undefined
           try {
-            createdAt = fs.statSync(dir).mtime.toISOString() // real age, not "now"
+            createdAt = readMeta(dir).createdAt
           } catch {
-            createdAt = new Date().toISOString()
+            /* not yet adopted */
+          }
+          if (!createdAt) {
+            try {
+              createdAt = fs.statSync(dir).mtime.toISOString()
+            } catch {
+              createdAt = new Date().toISOString()
+            }
           }
           writeMeta(dir, { framework: fw, name, start, createdAt })
         }
@@ -410,47 +420,103 @@ program
     console.log(`\n  ✓ built ${c.green(String(all.length))}\n`)
   })
 
+interface AssembleResult {
+  count: number
+  staticCount: number
+  built: number
+  skipped: number
+}
+
+/** How a fiddle gets into the portfolio: build its dist, copy it static, or skip. */
+function renderMode(dir: string, start: string): 'static' | 'build' | 'skip' {
+  if (!start || start.startsWith('node')) return 'skip' // not a browser fiddle (node/bash/c/…)
+  const pkgPath = path.join(dir, 'package.json')
+  if (fs.existsSync(pkgPath)) {
+    try {
+      if (JSON.parse(fs.readFileSync(pkgPath, 'utf8')).scripts?.build) return 'build'
+    } catch {
+      /* malformed package.json — fall through to static */
+    }
+  }
+  return fs.existsSync(path.join(dir, 'index.html')) ? 'static' : 'skip'
+}
+
 /**
- * Build every showcase (browser) fiddle into `repo`, copy each dist into
- * `repo/f/<fw>/<name>/`, capture thumbnails, and (re)generate index.html +
- * manifest.json. Returns the number of fiddles assembled (0 if none).
+ * Assemble the whole collection into `repo` and (re)generate the portfolio.
+ * Each fiddle is either **built** (has a build script; attempted when `doBuild`,
+ * with a timeout — a decade-old install may hang), **copied static** (bare
+ * index.html), or **skipped** (node/bash/C/… or a build that failed with no
+ * index.html to fall back to). Resilient: one bad fiddle never aborts the run.
  * Shared by `publish` (→ a git repo) and `preview` (→ a scratch dir).
  */
-async function assemblePortfolio(repo: string, screenshots: boolean): Promise<number> {
-  const showcase = listCollection().filter((it) => {
-    try {
-      return isBrowser(readMeta(it.dir).start)
-    } catch {
-      return false
-    }
-  })
-  if (!showcase.length) {
-    console.log(c.dim('  (no showcase-able fiddles yet — `fiddle create <framework> <name>`)\n'))
-    return 0
+async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: boolean): Promise<AssembleResult> {
+  const all = listCollection()
+  if (!all.length) {
+    console.log(c.dim('  (no fiddles yet — `fiddle create <framework> <name>` or `fiddle adopt`)\n'))
+    return { count: 0, staticCount: 0, built: 0, skipped: 0 }
   }
   fs.mkdirSync(repo, { recursive: true })
   const items: { framework: string; name: string; friendly: string; hasThumb: boolean }[] = []
-  for (const it of showcase) {
-    process.stdout.write(c.dim(`  ${it.framework}/${it.name}  build`))
-    if (!fs.existsSync(path.join(it.dir, 'node_modules'))) await runShell('npm install', it.dir)
-    await runShell('npm run build -- --base=./', it.dir)
+  let staticCount = 0
+  let built = 0
+  let skipped = 0
+
+  for (const it of all) {
+    let start: string
+    try {
+      start = readMeta(it.dir).start
+    } catch {
+      skipped++
+      continue // not adopted / not a fiddle
+    }
+    const mode = renderMode(it.dir, start)
+    if (mode === 'skip') {
+      skipped++
+      continue
+    }
     const dest = path.join(repo, 'f', it.framework, it.name)
-    fs.rmSync(dest, { recursive: true, force: true })
-    fs.mkdirSync(dest, { recursive: true })
-    fs.cpSync(path.join(it.dir, 'dist'), dest, { recursive: true })
+    let rendered = false
+
+    if (mode === 'build' && doBuild) {
+      const installed =
+        fs.existsSync(path.join(it.dir, 'node_modules')) || (await tryShell('npm install', it.dir, 120_000))
+      if (
+        installed &&
+        (await tryShell('npm run build -- --base=./', it.dir, 120_000)) &&
+        fs.existsSync(path.join(it.dir, 'dist'))
+      ) {
+        fs.rmSync(dest, { recursive: true, force: true })
+        fs.mkdirSync(dest, { recursive: true })
+        fs.cpSync(path.join(it.dir, 'dist'), dest, { recursive: true })
+        rendered = true
+        built++
+      }
+    }
+
+    if (!rendered) {
+      // static fallback — needs a root index.html to iframe
+      if (!fs.existsSync(path.join(it.dir, 'index.html'))) {
+        skipped++
+        continue
+      }
+      fs.rmSync(dest, { recursive: true, force: true })
+      fs.mkdirSync(dest, { recursive: true })
+      copyFiddle(it.dir, dest) // excludes node_modules/dist/.git/screenshot.png
+      staticCount++
+    }
+
     let hasThumb = false
-    if (screenshots) {
-      process.stdout.write(c.dim(' · shot'))
+    if (screenshots && mode === 'build' && rendered) {
       fs.mkdirSync(path.join(repo, 'thumbs'), { recursive: true })
       hasThumb = await captureFiddle(it.dir, path.join(repo, 'thumbs', `${it.framework}__${it.name}.png`))
     }
-    console.log(c.dim(hasThumb ? ' ✓' : ' ✓ (no shot)'))
     items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb })
   }
+
   const manifest = buildManifest(items)
   fs.writeFileSync(path.join(repo, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
   fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest))
-  return manifest.length
+  return { count: manifest.length, staticCount, built, skipped }
 }
 
 // ── preview ──────────────────────────────────────────────────────────────────────
@@ -459,17 +525,20 @@ program
   .description('build the portfolio into a scratch dir and serve it locally — no config, no push')
   .option('-p, --port <n>', 'port to serve on', '4321')
   .option('--no-screenshots', 'skip auto-thumbnails (faster)')
+  .option('--no-build', 'copy static fiddles only — skip npm build (fast for a big archive)')
   .option('--no-open', "don't open the browser")
   .action(async (opts) => {
-    const dir = path.join(resolveHome(), '.preview')
+    const dir = path.join(os.tmpdir(), 'fiddle-preview') // scratch — never pollute the collection repo
     console.log(banner('preview'))
-    const n = await assemblePortfolio(dir, opts.screenshots)
-    if (!n) return
+    const r = await assemblePortfolio(dir, opts.screenshots, opts.build)
+    if (!r.count) return
     const port = parseInt(opts.port, 10) || 4321
     const server = await serveDir(dir, port)
     const url = `http://localhost:${port}`
-    console.log(`\n  ▸ ${c.green(String(n))} fiddles live at ${c.green(url)}`)
-    console.log(c.dim('  this is a local preview — run `fiddle publish` to ship it.  Ctrl-C to stop\n'))
+    console.log(
+      `\n  ▸ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.skipped} skipped)`)} at ${c.green(url)}`
+    )
+    console.log(c.dim('  local preview — run `fiddle publish` to ship it.  Ctrl-C to stop\n'))
     if (opts.open) openUrl(url)
     await new Promise<void>((resolve) => {
       process.on('SIGINT', () => {
@@ -485,14 +554,17 @@ program
   .command('publish')
   .description('build every fiddle, regenerate the portfolio shell, and push')
   .option('--no-screenshots', 'skip auto-thumbnails')
+  .option('--no-build', 'copy static fiddles only — skip npm build')
   .option('--no-push', 'assemble but do not git commit/push')
   .action(async (opts) => {
     const repo = process.env.FIDDLE_PUBLISH_REPO || loadConfig().publishRepo
     if (!repo) throw new Error('no target — run `fiddle config set publishRepo <dir>` first (or `fiddle preview` to look first)')
     console.log(banner('publish'))
-    const n = await assemblePortfolio(repo, opts.screenshots)
-    if (!n) return
-    console.log(`\n  ✓ ${c.green(String(n))} fiddles → ${c.dim(repo)}`)
+    const r = await assemblePortfolio(repo, opts.screenshots, opts.build)
+    if (!r.count) return
+    console.log(
+      `\n  ✓ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.skipped} skipped)`)} → ${c.dim(repo)}`
+    )
 
     if (opts.push && fs.existsSync(path.join(repo, '.git'))) {
       await runShell('git add index.html manifest.json f thumbs && git commit -m "fiddle publish" && git push', repo).catch(
