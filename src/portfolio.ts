@@ -105,6 +105,16 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
   </main>
 <script>
   const FIDDLES = ${DATA};
+  // Prettify a fiddle name for display: SelectAppend → Select Append,
+  // CSVReporter → CSV Reporter, ent_ag-grid → ent ag grid. (Raw name is kept
+  // for hashes/links.)
+  function humanize(s){
+    return String(s)
+      .replace(/[-_]+/g,' ')
+      .replace(/([A-Z]+)([A-Z][a-z])/g,'$1 $2')
+      .replace(/([a-z\\d])([A-Z])/g,'$1 $2')
+      .replace(/\\s+/g,' ').trim();
+  }
   const nav = document.getElementById('nav'), frame = document.getElementById('frame'),
         empty = document.getElementById('empty'), cur = document.getElementById('cur'), pop = document.getElementById('pop'),
         stage = document.getElementById('stage'), code = document.getElementById('code'),
@@ -123,7 +133,7 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
     empty.style.display='none'; stage.style.display='block';
     setView(false); // always land on the preview
     frame.src=f.url;
-    cur.textContent = f.framework + ' / ' + f.friendly;
+    cur.textContent = f.framework + ' / ' + humanize(f.friendly);
     pop.style.display='inline'; pop.href=f.url;
     codeBtn.style.display = (f.files && f.files.length) ? 'inline' : 'none';
     location.hash = f.framework + '/' + f.name;
@@ -147,14 +157,14 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
   }
   function itemEl(f){
     const it=document.createElement('div'); it.className='item'; it.dataset.key=f.framework+'/'+f.name;
-    it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl">'+f.friendly+'</div>';
+    it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl">'+humanize(f.friendly)+'</div>';
     it.onclick=()=>open(f,it); return it;
   }
   function render(filter=''){
     filter = filter.trim().toLowerCase();
     const byFw = {};
     for(const f of FIDDLES){
-      if(filter && !(f.framework+' '+f.friendly).toLowerCase().includes(filter)) continue;
+      if(filter && !(f.framework+' '+f.friendly+' '+humanize(f.friendly)).toLowerCase().includes(filter)) continue;
       (byFw[f.framework] ||= []).push(f);
     }
     nav.innerHTML='';
