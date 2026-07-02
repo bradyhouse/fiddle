@@ -44,6 +44,9 @@
     "url": "https://github.com/bradyhouse/fiddle/issues"
   },
   "homepage": "https://github.com/bradyhouse/fiddle#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "commander": "^12.1.0",
     "playwright": "^1.45.0"
