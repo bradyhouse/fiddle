@@ -442,6 +442,28 @@ function renderMode(dir: string, start: string): 'static' | 'build' | 'skip' {
 }
 
 /**
+ * A static fiddle only renders if the LOCAL scripts its index.html references
+ * actually exist on disk. Many decade-old fiddles point at an app.js/bundle
+ * that was a build artifact never committed — including those = a blank iframe.
+ * Remote/CDN scripts can't be verified, so they're allowed through.
+ */
+function staticAssetsOk(dir: string): boolean {
+  let html: string
+  try {
+    html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8')
+  } catch {
+    return false
+  }
+  for (const m of html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)) {
+    const src = m[1]
+    if (/^(https?:)?\/\//.test(src) || src.startsWith('data:')) continue
+    const rel = src.split(/[?#]/)[0].replace(/^\.?\//, '')
+    if (rel && !fs.existsSync(path.join(dir, rel))) return false
+  }
+  return true
+}
+
+/**
  * Assemble the whole collection into `repo` and (re)generate the portfolio.
  * Each fiddle is either **built** (has a build script; attempted when `doBuild`,
  * with a timeout — a decade-old install may hang), **copied static** (bare
@@ -477,25 +499,31 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
     const dest = path.join(repo, 'f', it.framework, it.name)
     let rendered = false
 
-    if (mode === 'build' && doBuild) {
-      const installed =
-        fs.existsSync(path.join(it.dir, 'node_modules')) || (await tryShell('npm install', it.dir, 120_000))
-      if (
-        installed &&
-        (await tryShell('npm run build -- --base=./', it.dir, 120_000)) &&
-        fs.existsSync(path.join(it.dir, 'dist'))
-      ) {
-        fs.rmSync(dest, { recursive: true, force: true })
-        fs.mkdirSync(dest, { recursive: true })
-        fs.cpSync(path.join(it.dir, 'dist'), dest, { recursive: true })
-        rendered = true
-        built++
+    if (mode === 'build') {
+      // Build fiddles are blank without their compiled bundle — build them, or
+      // skip. Never ship raw build source (that's the white-iframe trap).
+      if (doBuild) {
+        const installed =
+          fs.existsSync(path.join(it.dir, 'node_modules')) || (await tryShell('npm install', it.dir, 120_000))
+        if (
+          installed &&
+          (await tryShell('npm run build -- --base=./', it.dir, 120_000)) &&
+          fs.existsSync(path.join(it.dir, 'dist'))
+        ) {
+          fs.rmSync(dest, { recursive: true, force: true })
+          fs.mkdirSync(dest, { recursive: true })
+          fs.cpSync(path.join(it.dir, 'dist'), dest, { recursive: true })
+          rendered = true
+          built++
+        }
       }
-    }
-
-    if (!rendered) {
-      // static fallback — needs a root index.html to iframe
-      if (!fs.existsSync(path.join(it.dir, 'index.html'))) {
+      if (!rendered) {
+        skipped++
+        continue
+      }
+    } else {
+      // static — only if it's self-contained (its local scripts exist)
+      if (!staticAssetsOk(it.dir)) {
         skipped++
         continue
       }

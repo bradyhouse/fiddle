@@ -48,7 +48,15 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
   .search{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--text);
     font-family:var(--mono);font-size:12px;padding:8px 10px;margin-bottom:10px;outline:none}
   .search:focus{border-color:var(--phos-dim)}
-  .fw{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 6px 6px}
+  .fw-header{display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;user-select:none;
+    font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:6px 8px;margin:1px 0;border-radius:6px}
+  .fw-header:hover{background:var(--panel-2);color:var(--phos)}
+  .fw-header .chev{display:inline-block;font-size:8px;transition:transform .15s;color:var(--phos-dim)}
+  .fw-group.open>.fw-header{color:var(--phos-dim)}
+  .fw-group.open>.fw-header .chev{transform:rotate(90deg)}
+  .fw-header .cnt{color:var(--muted);font-size:10px}
+  .fw-items{display:none;margin:0 0 6px 8px}
+  .fw-group.open>.fw-items{display:block}
   .item{display:flex;gap:9px;align-items:center;padding:6px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:.12s}
   .item:hover{background:var(--panel-2);border-color:var(--line)}
   .item.active{background:var(--panel-2);border-color:var(--phos-dim)}
@@ -68,7 +76,7 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
 <body>
   <header><h1>brady@house<span class="dim">:~/</span>fiddles<span class="dim"> — a decade of build-to-learn</span></h1></header>
   <aside>
-    <input class="search" placeholder="filter…" oninput="render(this.value)">
+    <input class="search" placeholder="search framework or fiddle…" oninput="render(this.value)">
     <div id="nav"></div>
   </aside>
   <main>
@@ -82,32 +90,45 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
         empty = document.getElementById('empty'), cur = document.getElementById('cur'), pop = document.getElementById('pop');
   function open(f, el){
     document.querySelectorAll('.item.active').forEach(e=>e.classList.remove('active'));
-    if(el) el.classList.add('active');
+    if(el){ el.classList.add('active'); const g=el.closest('.fw-group'); if(g) g.classList.add('open'); el.scrollIntoView({block:'nearest'}); }
     empty.style.display='none'; frame.style.display='block'; frame.src=f.url;
     cur.textContent = f.framework + ' / ' + f.friendly;
     pop.style.display='inline'; pop.href=f.url;
     location.hash = f.framework + '/' + f.name;
   }
+  function itemEl(f){
+    const it=document.createElement('div'); it.className='item'; it.dataset.key=f.framework+'/'+f.name;
+    it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl">'+f.friendly+'</div>';
+    it.onclick=()=>open(f,it); return it;
+  }
   function render(filter=''){
-    filter = filter.toLowerCase();
+    filter = filter.trim().toLowerCase();
     const byFw = {};
     for(const f of FIDDLES){
       if(filter && !(f.framework+' '+f.friendly).toLowerCase().includes(filter)) continue;
       (byFw[f.framework] ||= []).push(f);
     }
     nav.innerHTML='';
-    for(const fw of Object.keys(byFw).sort()){
-      const h=document.createElement('div'); h.className='fw'; h.textContent=fw+' ('+byFw[fw].length+')'; nav.appendChild(h);
-      for(const f of byFw[fw]){
-        const it=document.createElement('div'); it.className='item';
-        it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl">'+f.friendly+'</div>';
-        it.onclick=()=>open(f,it); nav.appendChild(it);
-      }
+    const fws = Object.keys(byFw).sort();
+    for(const fw of fws){
+      const grp=document.createElement('div'); grp.className='fw-group';
+      if(filter || fws.length===1) grp.classList.add('open'); // auto-expand when searching
+      const h=document.createElement('div'); h.className='fw-header';
+      h.innerHTML='<span><span class="chev">▶</span> '+fw+'</span><span class="cnt">'+byFw[fw].length+'</span>';
+      h.onclick=()=>grp.classList.toggle('open');
+      grp.appendChild(h);
+      const box=document.createElement('div'); box.className='fw-items';
+      for(const f of byFw[fw]) box.appendChild(itemEl(f));
+      grp.appendChild(box); nav.appendChild(grp);
     }
   }
   render();
-  // deep-link support
-  if(location.hash){ const [fw,name]=location.hash.slice(1).split('/'); const f=FIDDLES.find(x=>x.framework===fw&&x.name===name); if(f) open(f, [...document.querySelectorAll('.item')].find(e=>e.querySelector('.lbl').textContent===f.friendly)); }
+  // deep-link support (exact framework/name match, then expand + select)
+  if(location.hash){
+    const [fw,name]=location.hash.slice(1).split('/');
+    const f=FIDDLES.find(x=>x.framework===fw&&x.name===name);
+    if(f){ render(); open(f, [...document.querySelectorAll('.item')].find(e=>e.dataset.key===fw+'/'+name)); }
+  }
 </script>
 </body>
 </html>
