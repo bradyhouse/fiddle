@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
 import { createInterface } from 'node:readline/promises'
+import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { REGISTRY } from './registry.js'
@@ -30,6 +31,23 @@ import { banner, c, nope } from './ui.js'
 
 const isBrowser = (start: string) => !start.startsWith('node')
 const friendly = (dir: string) => path.basename(dir).replace(/^fiddle-\d+-/, '')
+
+async function prompt(q: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const a = (await rl.question(c.amber(`  ${q} `))).trim()
+  rl.close()
+  return a
+}
+
+/** Is a command resolvable on PATH? */
+function have(bin: string): boolean {
+  try {
+    execSync(process.platform === 'win32' ? `where ${bin}` : `command -v ${bin}`, { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
 
 async function confirm(q: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })
@@ -86,6 +104,54 @@ config
   .action((key: string, value: string) => {
     setConfigKey(key, value)
     console.log('  ✓ ' + c.green(key) + ' = ' + value)
+  })
+
+// ── setup ─────────────────────────────────────────────────────────────────────
+program
+  .command('setup')
+  .description('one-time setup — check prerequisites, initialize config, install the screenshot browser')
+  .action(async () => {
+    console.log(banner('setup'))
+
+    // 1. prerequisites
+    console.log('  ' + c.bold('prerequisites'))
+    const nodeMajor = parseInt(process.versions.node.split('.')[0], 10)
+    console.log(`    ${nodeMajor >= 18 ? c.green('✓') : c.red('✗')} node ${process.versions.node}${nodeMajor >= 18 ? '' : c.red('  (need ≥18)')}`)
+    console.log(`    ${have('git') ? c.green('✓') : c.amber('!')} git${have('git') ? '' : c.dim('  (needed for `fiddle publish`)')}`)
+    const editor = loadConfig().editor || 'code'
+    console.log(`    ${have(editor) ? c.green('✓') : c.amber('!')} editor: ${editor}${have(editor) ? '' : c.dim('  (not on PATH — `fiddle config set editor <cmd>`)')}`)
+
+    // 2. config
+    console.log('\n  ' + c.bold('config'))
+    const cfg = loadConfig()
+    if (process.stdin.isTTY) {
+      const home = (await prompt(`home [${cfg.home}]:`)) || cfg.home
+      setConfigKey('home', home)
+      const repo = await prompt(`publishRepo (optional) [${cfg.publishRepo || 'unset'}]:`)
+      if (repo) setConfigKey('publishRepo', repo)
+    } else {
+      setConfigKey('home', cfg.home) // non-interactive: persist the defaults
+      console.log(c.dim('    (non-interactive — kept defaults; `fiddle config set <key> <value>` to change)'))
+    }
+    fs.mkdirSync(resolveHome(), { recursive: true })
+    console.log(`    home → ${c.green(resolveHome())}`)
+    console.log(`    file → ${c.dim(CONFIG_FILE)}`)
+
+    // 3. screenshot browser (portfolio thumbnails)
+    console.log('\n  ' + c.bold('screenshot browser') + c.dim('  — for portfolio thumbnails'))
+    const wantsBrowser = process.stdin.isTTY ? await confirm('install Chromium now? (~150MB)') : false
+    if (wantsBrowser) {
+      try {
+        await runShell('npx --yes playwright install chromium', process.cwd())
+        console.log(`    ${c.green('✓')} Chromium installed`)
+      } catch {
+        console.log(`    ${c.amber('!')} install failed — thumbnails fall back to placeholders`)
+      }
+    } else {
+      console.log(c.dim('    skipped — thumbnails fall back to placeholders (`npx playwright install chromium` any time)'))
+    }
+
+    console.log(`\n  ${c.green('✓')} ready.   ${c.dim('fiddle create <framework> <name>')}\n`)
   })
 
 // ── create ──────────────────────────────────────────────────────────────────
