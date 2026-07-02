@@ -125,6 +125,32 @@ export function writeMeta(dir: string, meta: FiddleMeta): void {
   fs.writeFileSync(path.join(dir, '.fiddle.json'), JSON.stringify(meta, null, 2) + '\n')
 }
 
+/**
+ * Infer how to run an existing (un-adopted) fiddle from its files, so `adopt`
+ * can record a start command for a collection fiddle didn't scaffold. Empty
+ * string = nothing runnable found (e.g. a bash/C/python fiddle) — still adopted
+ * for listing, just not startable.
+ */
+export function inferStart(dir: string): string {
+  const pkgPath = path.join(dir, 'package.json')
+  if (fs.existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+      if (pkg.scripts?.dev) return 'npm run dev'
+      if (pkg.scripts?.start) return 'npm start'
+      if (pkg.main) return `node ${pkg.main}`
+    } catch {
+      /* malformed package.json — fall through to a best guess */
+    }
+    return 'npm start'
+  }
+  if (fs.existsSync(path.join(dir, 'index.html'))) return 'npx --yes serve -l 5173' // static
+  for (const f of ['index.mjs', 'index.js', 'main.js', 'server.js']) {
+    if (fs.existsSync(path.join(dir, f))) return `node ${f}`
+  }
+  return '' // no runnable entry
+}
+
 export function readMeta(dir: string): FiddleMeta {
   const p = path.join(dir, '.fiddle.json')
   if (!fs.existsSync(p)) throw new Error(`${path.basename(dir)} is not a fiddle (no .fiddle.json)`)

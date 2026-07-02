@@ -12,6 +12,7 @@ import {
   cwdFiddle,
   frameworkDir,
   getEntry,
+  inferStart,
   injectDefaults,
   listCollection,
   nextNumber,
@@ -152,6 +153,68 @@ program
     }
 
     console.log(`\n  ${c.green('✓')} ready.   ${c.dim('fiddle create <framework> <name>')}\n`)
+  })
+
+// ── adopt ─────────────────────────────────────────────────────────────────────
+program
+  .command('adopt')
+  .description('bring an existing collection under management — write a .fiddle.json for each fiddle')
+  .argument('[framework]', 'limit to one framework')
+  .option('--dry-run', 'report what would be adopted; write nothing')
+  .option('--force', 're-adopt even where a .fiddle.json already exists')
+  .action(async (framework, opts) => {
+    const home = resolveHome()
+    console.log(banner('adopt'))
+    console.log(c.dim(`  ${home}\n`))
+    const frameworks = (
+      framework
+        ? [framework]
+        : fs.readdirSync(home).filter((d) => !d.startsWith('.') && fs.statSync(path.join(home, d)).isDirectory())
+    ).sort()
+
+    let adopted = 0
+    let runnable = 0
+    let skipped = 0
+    for (const fw of frameworks) {
+      const fwDir = path.join(home, fw)
+      if (!fs.statSync(fwDir, { throwIfNoEntry: false })?.isDirectory()) continue
+      let n = 0
+      let run = 0
+      for (const name of fs.readdirSync(fwDir)) {
+        const dir = path.join(fwDir, name)
+        if (!fs.statSync(dir).isDirectory()) continue
+        const looksLikeFiddle =
+          /^fiddle-\d+-/.test(name) ||
+          fs.existsSync(path.join(dir, 'package.json')) ||
+          fs.existsSync(path.join(dir, 'index.html'))
+        if (!looksLikeFiddle) continue
+        if (fs.existsSync(path.join(dir, '.fiddle.json')) && !opts.force) {
+          skipped++
+          continue
+        }
+        const start = inferStart(dir)
+        if (!opts.dryRun) {
+          let createdAt: string
+          try {
+            createdAt = fs.statSync(dir).mtime.toISOString() // real age, not "now"
+          } catch {
+            createdAt = new Date().toISOString()
+          }
+          writeMeta(dir, { framework: fw, name, start, createdAt })
+        }
+        n++
+        if (start) run++
+      }
+      if (n) {
+        console.log(`    ${fw.padEnd(14)} ${String(n).padStart(3)} ${run < n ? c.dim(`(${run} runnable)`) : c.green(`(${run} runnable)`)}`)
+        adopted += n
+        runnable += run
+      }
+    }
+    const verb = opts.dryRun ? c.amber('would adopt') : c.green('✓ adopted')
+    console.log(
+      `\n  ${verb} ${adopted} · ${runnable} runnable · ${adopted - runnable} no-entry${skipped ? c.dim(` · ${skipped} already managed`) : ''}\n`
+    )
   })
 
 // ── create ──────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { nextNumber, resolveFiddle, frameworkDir, getEntry } from '../src/core.ts'
+import { nextNumber, resolveFiddle, frameworkDir, getEntry, inferStart } from '../src/core.ts'
 import { resolveHome } from '../src/config.ts'
 
 /** Point the collection home at a fresh temp dir for the next call. */
@@ -50,4 +50,19 @@ test('getEntry: known builtin + delegate, unknown throws', () => {
   assert.equal(getEntry('three').provider, 'builtin')
   assert.equal(getEntry('react').provider, 'delegate')
   assert.throws(() => getEntry('cobol'))
+})
+
+test('inferStart: reads existing fiddles for adopt', () => {
+  const home = isolate()
+  const mk = (name: string, files: Record<string, string>): string => {
+    const d = path.join(home, 'x', name)
+    fs.mkdirSync(d, { recursive: true })
+    for (const [f, body] of Object.entries(files)) fs.writeFileSync(path.join(d, f), body)
+    return d
+  }
+  assert.equal(inferStart(mk('dev', { 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) })), 'npm run dev')
+  assert.equal(inferStart(mk('start', { 'package.json': JSON.stringify({ scripts: { start: 'x' } }) })), 'npm start')
+  assert.equal(inferStart(mk('static', { 'index.html': '<html></html>' })), 'npx --yes serve -l 5173')
+  assert.equal(inferStart(mk('node', { 'index.mjs': '' })), 'node index.mjs')
+  assert.equal(inferStart(mk('noentry', { 'notes.txt': '' })), '') // bash/C-style: nothing runnable
 })
