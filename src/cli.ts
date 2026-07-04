@@ -434,6 +434,7 @@ interface AssembleResult {
   count: number
   staticCount: number
   built: number
+  srcOnly: number
   skipped: number
 }
 
@@ -471,6 +472,23 @@ function staticAssetsOk(dir: string): boolean {
     if (rel && !fs.existsSync(path.join(dir, rel))) return false
   }
   return true
+}
+
+/**
+ * A committed build output to serve as-is — `dist/` (vite) or `build/` (CRA),
+ * whichever exists and is non-empty. Decade-old fiddles rarely rebuild on a
+ * modern toolchain, but the bundle they shipped still renders. Prefer it.
+ */
+function builtDir(dir: string): string | null {
+  for (const name of ['dist', 'build']) {
+    const p = path.join(dir, name)
+    try {
+      if (fs.statSync(p).isDirectory() && fs.readdirSync(p).length) return p
+    } catch {
+      /* not present */
+    }
+  }
+  return null
 }
 
 const SRC_EXT = new Set([
@@ -518,12 +536,13 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
   const all = listCollection()
   if (!all.length) {
     console.log(c.dim('  (no fiddles yet — `fiddle create <framework> <name>` or `fiddle adopt`)\n'))
-    return { count: 0, staticCount: 0, built: 0, skipped: 0 }
+    return { count: 0, staticCount: 0, built: 0, srcOnly: 0, skipped: 0 }
   }
   fs.mkdirSync(repo, { recursive: true })
-  const items: { framework: string; name: string; friendly: string; hasThumb: boolean; files: string[] }[] = []
+  const items: { framework: string; name: string; friendly: string; hasThumb: boolean; live: boolean; files: string[] }[] = []
   let staticCount = 0
   let built = 0
+  let srcOnly = 0
   let skipped = 0
 
   for (const it of all) {
@@ -543,39 +562,51 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
     let rendered = false
     let files: string[] = []
 
+    let live = true
+
     if (mode === 'build') {
-      // Build fiddles are blank without their compiled bundle — build them, or
-      // skip. Never ship raw build source (that's the white-iframe trap).
-      if (doBuild) {
+      // Prefer the committed build output (dist/ or build/) — a decade-old fiddle
+      // rarely rebuilds on a modern toolchain, but what it shipped still renders.
+      // Only rebuild when nothing is committed; never iframe raw build source.
+      let out = builtDir(it.dir)
+      if (!out && doBuild) {
         const installed =
           fs.existsSync(path.join(it.dir, 'node_modules')) || (await tryShell(NPM_INSTALL, it.dir, 120_000))
-        if (
-          installed &&
-          (await tryShell('npm run build -- --base=./', it.dir, 120_000)) &&
-          fs.existsSync(path.join(it.dir, 'dist'))
-        ) {
-          fs.rmSync(dest, { recursive: true, force: true })
-          fs.mkdirSync(dest, { recursive: true })
-          fs.cpSync(path.join(it.dir, 'dist'), dest, { recursive: true })
-          rendered = true
-          built++
+        if (installed) {
+          await tryShell('npm run build -- --base=./', it.dir, 120_000)
+          out = builtDir(it.dir)
         }
       }
-      if (!rendered) {
-        skipped++
-        continue
+      if (out) {
+        fs.rmSync(dest, { recursive: true, force: true })
+        fs.mkdirSync(dest, { recursive: true })
+        fs.cpSync(out, dest, { recursive: true })
+        rendered = true
+        built++
       }
-    } else {
-      // static — only if it's self-contained (its local scripts exist)
-      if (!staticAssetsOk(it.dir)) {
-        skipped++
-        continue
-      }
+    } else if (staticAssetsOk(it.dir)) {
+      // static & self-contained (its local scripts exist) — copy as-is
       fs.rmSync(dest, { recursive: true, force: true })
       fs.mkdirSync(dest, { recursive: true })
       copyFiddle(it.dir, dest) // excludes node_modules/dist/.git/screenshot.png
       files = sourceFiles(dest) // the copied source is browsable in the portfolio
+      rendered = true
       staticCount++
+    }
+
+    // No runnable demo → keep the fiddle as a source-only entry (browsable code,
+    // no iframe) instead of dropping it. Skip only when there's no source to show.
+    if (!rendered) {
+      fs.rmSync(dest, { recursive: true, force: true })
+      fs.mkdirSync(dest, { recursive: true })
+      copyFiddle(it.dir, dest)
+      files = sourceFiles(dest)
+      if (!files.length) {
+        skipped++
+        continue
+      }
+      live = false
+      srcOnly++
     }
 
     let hasThumb = false
@@ -583,13 +614,13 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
       fs.mkdirSync(path.join(repo, 'thumbs'), { recursive: true })
       hasThumb = await captureFiddle(it.dir, path.join(repo, 'thumbs', `${it.framework}__${it.name}.png`))
     }
-    items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb, files })
+    items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb, live, files })
   }
 
   const manifest = buildManifest(items)
   fs.writeFileSync(path.join(repo, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
   fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest))
-  return { count: manifest.length, staticCount, built, skipped }
+  return { count: manifest.length, staticCount, built, srcOnly, skipped }
 }
 
 // ── preview ──────────────────────────────────────────────────────────────────────
@@ -609,7 +640,7 @@ program
     const server = await serveDir(dir, port)
     const url = `http://localhost:${port}`
     console.log(
-      `\n  ▸ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.skipped} skipped)`)} at ${c.green(url)}`
+      `\n  ▸ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.srcOnly} source · ${r.skipped} skipped)`)} at ${c.green(url)}`
     )
     console.log(c.dim('  local preview — run `fiddle publish` to ship it.  Ctrl-C to stop\n'))
     if (opts.open) openUrl(url)
@@ -636,7 +667,7 @@ program
     const r = await assemblePortfolio(repo, opts.screenshots, opts.build)
     if (!r.count) return
     console.log(
-      `\n  ✓ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.skipped} skipped)`)} → ${c.dim(repo)}`
+      `\n  ✓ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.srcOnly} source · ${r.skipped} skipped)`)} → ${c.dim(repo)}`
     )
 
     if (opts.push && fs.existsSync(path.join(repo, '.git'))) {

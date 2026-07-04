@@ -8,11 +8,12 @@ export interface ManifestEntry {
   friendly: string // foo
   url: string // f/<framework>/<name>/index.html
   thumb: string | null // thumbs/<framework>__<name>.png
+  live: boolean // false = source-only (no runnable demo; opens straight to code)
   files: string[] // source files, relative to the fiddle dir (for the source view)
 }
 
 export function buildManifest(
-  items: { framework: string; name: string; friendly: string; hasThumb: boolean; files?: string[] }[]
+  items: { framework: string; name: string; friendly: string; hasThumb: boolean; live?: boolean; files?: string[] }[]
 ): ManifestEntry[] {
   return items
     .map((i) => ({
@@ -21,6 +22,7 @@ export function buildManifest(
       friendly: i.friendly,
       url: `f/${i.framework}/${i.name}/index.html`,
       thumb: i.hasThumb ? `thumbs/${i.framework}__${i.name}.png` : null,
+      live: i.live !== false,
       files: i.files ?? []
     }))
     .sort((a, b) => a.framework.localeCompare(b.framework) || a.name.localeCompare(b.name))
@@ -131,11 +133,17 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
     document.querySelectorAll('.item.active').forEach(e=>e.classList.remove('active'));
     if(el){ el.classList.add('active'); const g=el.closest('.fw-group'); if(g) g.classList.add('open'); el.scrollIntoView({block:'nearest'}); }
     empty.style.display='none'; stage.style.display='block';
-    setView(false); // always land on the preview
-    frame.src=f.url;
     cur.textContent = f.framework + ' / ' + humanize(f.friendly);
-    pop.style.display='inline'; pop.href=f.url;
-    codeBtn.style.display = (f.files && f.files.length) ? 'inline' : 'none';
+    if(f.live !== false){
+      setView(false); frame.src=f.url;                 // land on the live demo
+      pop.style.display='inline'; pop.href=f.url;
+      codeBtn.style.display = (f.files && f.files.length) ? 'inline' : 'none';
+    } else {
+      frame.src='about:blank';                          // no runnable demo — source only
+      setView(true); loadCode(f);
+      pop.style.display='none';
+      codeBtn.style.display='none';                     // nothing to toggle back to
+    }
     location.hash = f.framework + '/' + f.name;
   }
   function toggleCode(){ if(current){ setView(!codeOn); if(codeOn) loadCode(current); } }
@@ -157,7 +165,8 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
   }
   function itemEl(f){
     const it=document.createElement('div'); it.className='item'; it.dataset.key=f.framework+'/'+f.name;
-    it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl">'+humanize(f.friendly)+'</div>';
+    const tag = (f.live===false) ? '<span style="margin-left:auto;color:var(--muted);font-size:9.5px;letter-spacing:.05em">src</span>' : '';
+    it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl">'+humanize(f.friendly)+'</div>'+tag;
     it.onclick=()=>open(f,it); return it;
   }
   function render(filter=''){
