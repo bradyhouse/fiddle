@@ -35,6 +35,12 @@ import { banner, c, nope } from './ui.js'
 const isBrowser = (start: string) => !start.startsWith('node')
 const friendly = (dir: string) => path.basename(dir).replace(/^fiddle-\d+-/, '')
 
+// Adopted fiddles carry aged transitive deps whose peer ranges no longer agree
+// (npm v7+ errors where npm v4 shrugged). When running the archive — build,
+// start, publish — install like the archive it is; authoring (create/fork)
+// stays strict so new templates surface real peer issues.
+const NPM_INSTALL = 'npm install --legacy-peer-deps'
+
 async function prompt(q: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })
   const a = (await rl.question(c.amber(`  ${q} `))).trim()
@@ -337,6 +343,10 @@ program
     const dir = resolveFiddle(framework, name)
     const meta = readMeta(dir)
     console.log(banner(`start · ${friendly(dir)}`))
+    if (!fs.existsSync(path.join(dir, 'node_modules'))) {
+      console.log(c.dim('  installing…\n'))
+      await runShell(NPM_INSTALL, dir)
+    }
     console.log(c.dim(`  ${meta.start}   (Ctrl+C to stop)\n`))
     await runShell(meta.start, dir)
   })
@@ -388,7 +398,7 @@ program
     const buildOne = async (dir: string, quiet = false) => {
       if (!isBrowser(readMeta(dir).start)) throw new Error(`${friendly(dir)} is a node fiddle — nothing to showcase`)
       if (!quiet) console.log(banner(`build · ${friendly(dir)}`))
-      if (!fs.existsSync(path.join(dir, 'node_modules'))) await runShell('npm install', dir)
+      if (!fs.existsSync(path.join(dir, 'node_modules'))) await runShell(NPM_INSTALL, dir)
       await runShell('npm run build -- --base=./', dir) // relative base → works under /f/<fw>/<name>/
       if (!quiet) console.log(`\n  ✓ built → ${c.green('dist/')}\n`)
     }
@@ -538,7 +548,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
       // skip. Never ship raw build source (that's the white-iframe trap).
       if (doBuild) {
         const installed =
-          fs.existsSync(path.join(it.dir, 'node_modules')) || (await tryShell('npm install', it.dir, 120_000))
+          fs.existsSync(path.join(it.dir, 'node_modules')) || (await tryShell(NPM_INSTALL, it.dir, 120_000))
         if (
           installed &&
           (await tryShell('npm run build -- --base=./', it.dir, 120_000)) &&
