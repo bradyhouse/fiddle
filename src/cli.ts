@@ -492,8 +492,17 @@ function builtDir(dir: string): string | null {
 }
 
 const SRC_EXT = new Set([
-  '.html', '.htm', '.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx', '.vue', '.svelte',
-  '.css', '.scss', '.less', '.json', '.md', '.markdown', '.svg', '.xml', '.txt'
+  // web
+  '.html', '.htm', '.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx', '.vue', '.svelte', '.astro',
+  '.css', '.scss', '.sass', '.less', '.json', '.svg', '.xml',
+  // shell / systems
+  '.sh', '.bash', '.zsh', '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.rs', '.go',
+  // jvm / mobile
+  '.java', '.kt', '.kts', '.gradle', '.groovy', '.properties', '.swift', '.m', '.mm',
+  // scripting
+  '.py', '.rb', '.php', '.pl', '.lua', '.r', '.cs',
+  // data / docs / config
+  '.yml', '.yaml', '.toml', '.ini', '.sql', '.graphql', '.md', '.markdown', '.adoc', '.rst', '.txt'
 ])
 
 /** Text source files under `dir` (relative paths, index.html first), for the source view. */
@@ -554,10 +563,6 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
       continue // not adopted / not a fiddle
     }
     const mode = renderMode(it.dir, start)
-    if (mode === 'skip') {
-      skipped++
-      continue
-    }
     const dest = path.join(repo, 'f', it.framework, it.name)
     let rendered = false
     let files: string[] = []
@@ -584,7 +589,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
         rendered = true
         built++
       }
-    } else if (staticAssetsOk(it.dir)) {
+    } else if (mode === 'static' && staticAssetsOk(it.dir)) {
       // static & self-contained (its local scripts exist) — copy as-is
       fs.rmSync(dest, { recursive: true, force: true })
       fs.mkdirSync(dest, { recursive: true })
@@ -594,7 +599,8 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
       staticCount++
     }
 
-    // No runnable demo → keep the fiddle as a source-only entry (browsable code,
+    // Not a live demo (node/CLI fiddle, a build with no output, or a page whose
+    // local assets are missing) → keep it as a source-only entry (browsable code,
     // no iframe) instead of dropping it. Skip only when there's no source to show.
     if (!rendered) {
       fs.rmSync(dest, { recursive: true, force: true })
