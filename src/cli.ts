@@ -28,7 +28,7 @@ import {
 } from './core.js'
 import { claudeMd } from './defaults.js'
 import { buildManifest, shellHtml } from './portfolio.js'
-import { captureFiddle } from './screenshot.js'
+import { captureServed } from './screenshot.js'
 import { serveDir } from './serve.js'
 import { banner, c, nope } from './ui.js'
 
@@ -650,12 +650,18 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
       srcOnly++
     }
 
-    let hasThumb = false
-    if (screenshots && mode === 'build' && rendered) {
-      fs.mkdirSync(path.join(repo, 'thumbs'), { recursive: true })
-      hasThumb = await captureFiddle(it.dir, path.join(repo, 'thumbs', `${it.framework}__${it.name}.png`))
-    }
-    items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb, live, files })
+    items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb: false, live, files })
+  }
+
+  // Thumbnails: screenshot the assembled, SERVED portfolio (correct for rebased
+  // builds + static fiddles; one server for all — not a dev server per fiddle).
+  // Only LIVE fiddles have a rendered page to shoot.
+  if (screenshots) {
+    const liveItems = items.filter((i) => i.live)
+    console.log(c.dim(`  📸 thumbnailing ${liveItems.length} live fiddles…`))
+    const shot = await captureServed(repo, liveItems, 4599, (d, t) => console.log(c.dim(`     ${d}/${t}`)))
+    for (const i of items) if (shot.has(`${i.framework}/${i.name}`)) i.hasThumb = true
+    console.log(c.dim(`  📸 ${shot.size} thumbnails captured`))
   }
 
   const manifest = buildManifest(items)
