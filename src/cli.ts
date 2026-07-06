@@ -502,19 +502,7 @@ function rebaseBuiltDist(dest: string, framework: string, name: string): void {
   const baked = `/${framework}/${name}/`
   const served = `/f/${framework}/${name}/`
   const idxPath = path.join(dest, 'index.html')
-  let index: string
-  try {
-    index = fs.readFileSync(idxPath, 'utf8')
-  } catch {
-    return
-  }
-  // Angular-CLI (and similar) builds ship `<base href="/">` with RELATIVE asset refs, so
-  // main-*.js/styles-*.css resolve against the site root (/main-*.js) → 404 under the
-  // /f/<fw>/<name>/ subpath. Repoint the base at the fiddle's served dir so they resolve.
-  if (/<base\s+href="\/"\s*\/?>/i.test(index)) {
-    index = index.replace(/(<base\s+href=")\/("\s*\/?>)/i, `$1${served}$2`)
-    fs.writeFileSync(idxPath, index)
-  }
+  if (!fs.existsSync(idxPath)) return
   // Rewrite two baked-in path forms across all text assets:
   //  1. Absolute-base builds (e.g. vite `base: '/vue/<name>/'`): the deploy path is baked into
   //     asset URLs AND the SPA router base → rewrite `/<fw>/<name>/` to the `/f/` served path.
@@ -541,6 +529,18 @@ function rebaseBuiltDist(dest: string, framework: string, name: string): void {
     }
   }
   walk(dest)
+  // AFTER the walk (so `served` isn't re-prefixed — `baked` is a substring of `served`):
+  // Angular-CLI builds ship `<base href="/">` with RELATIVE asset refs, so main-*.js/
+  // styles-*.css resolve against the site root and 404 under /f/<fw>/<name>/. Repoint
+  // the base at the served dir so they resolve.
+  try {
+    const idx = fs.readFileSync(idxPath, 'utf8')
+    if (/<base\s+href="\/"\s*\/?>/i.test(idx)) {
+      fs.writeFileSync(idxPath, idx.replace(/(<base\s+href=")\/("\s*\/?>)/i, `$1${served}$2`))
+    }
+  } catch {
+    /* no index / unreadable */
+  }
 }
 
 // Many old fiddles embed a "Fork me on GitHub" ribbon <img> from
@@ -740,7 +740,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
 
   const manifest = buildManifest(items)
   fs.writeFileSync(path.join(repo, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
-  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest))
+  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest, 'fiddles', loadConfig().favorite))
   return { count: manifest.length, staticCount, built, srcOnly, skipped }
 }
 
