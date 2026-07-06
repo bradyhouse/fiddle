@@ -501,13 +501,21 @@ function builtDir(dir: string): string | null {
 function rebaseBuiltDist(dest: string, framework: string, name: string): void {
   const baked = `/${framework}/${name}/`
   const served = `/f/${framework}/${name}/`
+  const idxPath = path.join(dest, 'index.html')
   let index: string
   try {
-    index = fs.readFileSync(path.join(dest, 'index.html'), 'utf8')
+    index = fs.readFileSync(idxPath, 'utf8')
   } catch {
     return
   }
-  if (!index.includes(baked)) return // relative build (or a different base) — nothing to rebase
+  // Angular-CLI (and similar) builds ship `<base href="/">` with RELATIVE asset refs, so
+  // main-*.js/styles-*.css resolve against the site root (/main-*.js) → 404 under the
+  // /f/<fw>/<name>/ subpath. Repoint the base at the fiddle's served dir so they resolve.
+  if (/<base\s+href="\/"\s*\/?>/i.test(index)) {
+    index = index.replace(/(<base\s+href=")\/("\s*\/?>)/i, `$1${served}$2`)
+    fs.writeFileSync(idxPath, index)
+  }
+  if (!index.includes(baked)) return // relative build (or a different base) — nothing more to rebase
   const walk = (d: string): void => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name)
