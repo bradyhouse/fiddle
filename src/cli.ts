@@ -515,7 +515,14 @@ function rebaseBuiltDist(dest: string, framework: string, name: string): void {
     index = index.replace(/(<base\s+href=")\/("\s*\/?>)/i, `$1${served}$2`)
     fs.writeFileSync(idxPath, index)
   }
-  if (!index.includes(baked)) return // relative build (or a different base) — nothing more to rebase
+  // Rewrite two baked-in path forms across all text assets:
+  //  1. Absolute-base builds (e.g. vite `base: '/vue/<name>/'`): the deploy path is baked into
+  //     asset URLs AND the SPA router base → rewrite `/<fw>/<name>/` to the `/f/` served path.
+  //  2. Relative-base SPA builds (vite `base: './'`): assets resolve fine via `./`, but the router
+  //     base is baked as `createWebHistory("./")` which vue-router normalizes to "/." and never
+  //     matches the /f/<fw>/<name>/ serve path → the app renders its 404 route. Repoint that base.
+  // (Both are no-ops when absent, so this is safe to run on every built fiddle.)
+  const rewriteHistory = /history:\w+\("\.\/"\)/
   const walk = (d: string): void => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name)
@@ -523,7 +530,10 @@ function rebaseBuiltDist(dest: string, framework: string, name: string): void {
       else if (/\.(html?|c?js|mjs|css|json|map|svg|txt|webmanifest)$/i.test(e.name)) {
         try {
           const b = fs.readFileSync(p, 'utf8')
-          if (b.includes(baked)) fs.writeFileSync(p, b.split(baked).join(served))
+          let out = b
+          if (out.includes(baked)) out = out.split(baked).join(served)
+          if (rewriteHistory.test(out)) out = out.replace(/(history:\w+\(")\.\/("\))/g, `$1${served}$2`)
+          if (out !== b) fs.writeFileSync(p, out)
         } catch {
           /* skip unreadable/binary */
         }
