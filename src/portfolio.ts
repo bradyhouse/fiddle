@@ -20,7 +20,7 @@ export function buildManifest(
       framework: i.framework,
       name: i.name,
       friendly: i.friendly,
-      url: `f/${i.framework}/${i.name}/index.html`,
+      url: `f/${i.framework}/${i.name}/`, // the DIRECTORY, not index.html — so SPA routers (vue-router) match their home route instead of falling to a 404 on "/index.html"
       thumb: i.hasThumb ? `thumbs/${i.framework}__${i.name}.png` : null,
       live: i.live !== false,
       files: i.files ?? []

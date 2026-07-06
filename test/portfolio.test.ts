@@ -8,7 +8,7 @@ test('buildManifest sorts by framework and shapes url + thumb', () => {
     { framework: 'three', name: 'fiddle-0001-a', friendly: 'a', hasThumb: true }
   ])
   assert.equal(m[0].framework, 'three') // sorted ahead of vue
-  assert.equal(m[0].url, 'f/three/fiddle-0001-a/index.html')
+  assert.equal(m[0].url, 'f/three/fiddle-0001-a/') // directory, not index.html — so SPA routers match home
   assert.equal(m[0].thumb, 'thumbs/three__fiddle-0001-a.png')
   assert.equal(m[1].thumb, null) // no thumbnail → null, not a broken path
 })

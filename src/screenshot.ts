@@ -103,7 +103,7 @@ export async function captureServed(
       i++
       try {
         await page
-          .goto(`http://localhost:${port}/f/${e.framework}/${e.name}/index.html`, { waitUntil: 'networkidle', timeout: 10_000 })
+          .goto(`http://localhost:${port}/f/${e.framework}/${e.name}/`, { waitUntil: 'networkidle', timeout: 10_000 })
           .catch(() => {})
         await page.waitForTimeout(500)
         await page.screenshot({ path: path.join(thumbs, `${e.framework}__${e.name}.png`) })

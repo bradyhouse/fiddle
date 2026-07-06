@@ -525,6 +525,25 @@ function rebaseBuiltDist(dest: string, framework: string, name: string): void {
   walk(dest)
 }
 
+// Many old fiddles embed a "Fork me on GitHub" ribbon <img> from
+// s3.amazonaws.com/github/ribbons/, which GitHub removed years ago → a broken-image
+// icon in every one. Inject a style into the served index.html to hide it (covers
+// static markup AND JS-rendered ribbons, since the CSS is global).
+function hideDeadRibbons(dest: string): void {
+  const idx = path.join(dest, 'index.html')
+  let html: string
+  try {
+    html = fs.readFileSync(idx, 'utf8')
+  } catch {
+    return
+  }
+  const style =
+    '<style>img[src*="s3.amazonaws.com/github"],img[src*="ribbons/forkme"],img[src*="ribbons%2Fforkme"]{display:none!important}</style>'
+  if (html.includes(style)) return
+  html = /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${style}</head>`) : style + html
+  fs.writeFileSync(idx, html)
+}
+
 const SRC_EXT = new Set([
   // web
   '.html', '.htm', '.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx', '.vue', '.svelte', '.astro',
@@ -621,6 +640,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
         fs.mkdirSync(dest, { recursive: true })
         fs.cpSync(out, dest, { recursive: true })
         rebaseBuiltDist(dest, it.framework, it.name) // fix absolute base baked to the old deploy path
+        hideDeadRibbons(dest)
         rendered = true
         built++
       }
@@ -630,6 +650,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
       fs.mkdirSync(dest, { recursive: true })
       copyFiddle(it.dir, dest) // excludes node_modules/dist/.git/screenshot.png
       files = sourceFiles(dest) // the copied source is browsable in the portfolio
+      hideDeadRibbons(dest)
       rendered = true
       staticCount++
     }
