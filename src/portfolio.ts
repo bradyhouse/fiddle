@@ -204,12 +204,24 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
     if(f) open(f, [...document.querySelectorAll('.item')].find(e=>e.dataset.key===fw+'/'+name));
     return !!f;
   }
-  if(location.hash){
-    const [fw,name]=location.hash.slice(1).split('/');
-    landOn(fw,name);
+  // Framework-only hash (e.g. #three, deep-linked from the site's "Earlier explorations"):
+  // filter the sidebar to that framework and open its landing fiddle — the favorite if it
+  // lives in that framework, else the first live one.
+  function landOnFramework(fw){
+    const box=document.querySelector('.search'); if(box) box.value=fw;
+    render(fw);
+    const favInFw = (FAVORITE && FAVORITE.split('/')[0]===fw) ? FIDDLES.find(x=>x.framework+'/'+x.name===FAVORITE) : null;
+    const pick = favInFw || FIDDLES.find(x=>x.framework===fw && x.live!==false) || FIDDLES.find(x=>x.framework===fw);
+    if(pick) open(pick, [...document.querySelectorAll('.item')].find(e=>e.dataset.key===pick.framework+'/'+pick.name));
+    return !!pick;
+  }
+  const hash = location.hash.slice(1);
+  if(hash.includes('/')){
+    const [fw,name]=hash.split('/'); landOn(fw,name);
+  } else if(hash){
+    landOnFramework(hash);
   } else if(FAVORITE){
-    const [fw,name]=FAVORITE.split('/');
-    landOn(fw,name);
+    const [fw,name]=FAVORITE.split('/'); landOn(fw,name);
   }
 </script>
 </body>
