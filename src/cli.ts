@@ -491,6 +491,39 @@ function builtDir(dir: string): string | null {
   return null
 }
 
+// Committed builds were compiled with an ABSOLUTE base baked to their old deploy
+// path (e.g. vite `base: '/vue/<name>/'` for github.io), which 404s under the
+// portfolio's `/f/<fw>/<name>/` layout → blank iframe. Rewrite that baked prefix
+// to the served location across every text file in the copied build (no rebuild —
+// vite/CRA configs hard-code the base and often no longer build). Absolute→absolute
+// so it's depth-independent; assumes the portfolio is served at the domain root.
+function rebaseBuiltDist(dest: string, framework: string, name: string): void {
+  const baked = `/${framework}/${name}/`
+  const served = `/f/${framework}/${name}/`
+  let index: string
+  try {
+    index = fs.readFileSync(path.join(dest, 'index.html'), 'utf8')
+  } catch {
+    return
+  }
+  if (!index.includes(baked)) return // relative build (or a different base) — nothing to rebase
+  const walk = (d: string): void => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name)
+      if (e.isDirectory()) walk(p)
+      else if (/\.(html?|c?js|mjs|css|json|map|svg|txt|webmanifest)$/i.test(e.name)) {
+        try {
+          const b = fs.readFileSync(p, 'utf8')
+          if (b.includes(baked)) fs.writeFileSync(p, b.split(baked).join(served))
+        } catch {
+          /* skip unreadable/binary */
+        }
+      }
+    }
+  }
+  walk(dest)
+}
+
 const SRC_EXT = new Set([
   // web
   '.html', '.htm', '.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx', '.vue', '.svelte', '.astro',
@@ -586,6 +619,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
         fs.rmSync(dest, { recursive: true, force: true })
         fs.mkdirSync(dest, { recursive: true })
         fs.cpSync(out, dest, { recursive: true })
+        rebaseBuiltDist(dest, it.framework, it.name) // fix absolute base baked to the old deploy path
         rendered = true
         built++
       }
