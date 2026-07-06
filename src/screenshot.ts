@@ -105,7 +105,10 @@ export async function captureServed(
         await page
           .goto(`http://localhost:${port}/f/${e.framework}/${e.name}/`, { waitUntil: 'networkidle', timeout: 10_000 })
           .catch(() => {})
-        await page.waitForTimeout(500)
+        // networkidle fires when the last request settles, but canvas/WebGL demos (fabric
+        // image clouds, three.js scenes) then fetch textures and paint on the next frames.
+        // 500ms caught them mid-blank; 1500ms lets the first draw land in the thumbnail.
+        await page.waitForTimeout(1500)
         await page.screenshot({ path: path.join(thumbs, `${e.framework}__${e.name}.png`) })
         done.add(`${e.framework}/${e.name}`)
       } catch {

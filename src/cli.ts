@@ -537,8 +537,13 @@ function hideDeadRibbons(dest: string): void {
   } catch {
     return
   }
+  // Dead "Fork me on GitHub" ribbons come in several forms across the archive: a direct
+  // s3.amazonaws.com/github/ribbons/forkme <img> (d3/three), the same URL proxied through
+  // GitHub's camo.githubusercontent.com image proxy (jquery, document.write-injected), and
+  // an <a id="githubLink"> wrapper with alt="Fork me on GitHub". The s3 source is long dead
+  // → broken-image icon. Hide every variant (all 41 camo refs in the archive are this ribbon).
   const style =
-    '<style>img[src*="s3.amazonaws.com/github"],img[src*="ribbons/forkme"],img[src*="ribbons%2Fforkme"]{display:none!important}</style>'
+    '<style>img[src*="s3.amazonaws.com/github"],img[src*="ribbons/forkme"],img[src*="ribbons%2Fforkme"],img[src*="camo.githubusercontent.com"],img[alt="Fork me on GitHub" i],#githubLink{display:none!important}</style>'
   if (html.includes(style)) return
   html = /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${style}</head>`) : style + html
   fs.writeFileSync(idx, html)
