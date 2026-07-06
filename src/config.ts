@@ -10,6 +10,8 @@ export interface FiddleConfig {
   home: string
   /** the portfolio publish target (a git / gh-pages working dir) */
   publishRepo?: string
+  /** the fiddle shown on the portfolio landing page, as `<framework>/<name>` */
+  favorite?: string
   [key: string]: string | undefined
 }
 
@@ -26,6 +28,7 @@ export interface ConfigKeyInfo {
 export const CONFIG_KEYS: ConfigKeyInfo[] = [
   { key: 'home', desc: 'where all fiddles collect, organized by framework', default: DEFAULTS.home },
   { key: 'publishRepo', desc: 'portfolio publish target — a git working dir' },
+  { key: 'favorite', desc: 'fiddle featured on the portfolio landing page, as <framework>/<name>' },
   { key: 'editor', desc: 'editor command opened by `fiddle edit`', default: 'code' },
   { key: 'terminal', desc: 'terminal app spawned by `fiddle edit` (macOS)', default: 'Terminal' }
 ]

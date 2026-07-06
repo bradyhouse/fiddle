@@ -28,8 +28,11 @@ export function buildManifest(
     .sort((a, b) => a.framework.localeCompare(b.framework) || a.name.localeCompare(b.name))
 }
 
-export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string {
+export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite = ''): string {
   const DATA = JSON.stringify(manifest)
+  // The landing fiddle (config `favorite`, as "<framework>/<name>"). Only honored if it
+  // matches a real entry — otherwise the shell falls back to the "select a fiddle" prompt.
+  const FAV = JSON.stringify(favorite && manifest.some((m) => `${m.framework}/${m.name}` === favorite) ? favorite : '')
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -107,6 +110,7 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
   </main>
 <script>
   const FIDDLES = ${DATA};
+  const FAVORITE = ${FAV};
   // Prettify a fiddle name for display: SelectAppend → Select Append,
   // CSVReporter → CSV Reporter, ent_ag-grid → ent ag grid. (Raw name is kept
   // for hashes/links.)
@@ -165,8 +169,10 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
   }
   function itemEl(f){
     const it=document.createElement('div'); it.className='item'; it.dataset.key=f.framework+'/'+f.name;
-    const tag = (f.live===false) ? '<span style="margin-left:auto;color:var(--muted);font-size:9.5px;letter-spacing:.05em">src</span>' : '';
-    it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl">'+humanize(f.friendly)+'</div>'+tag;
+    const isFav = (f.framework+'/'+f.name) === FAVORITE;
+    const star = isFav ? '<span title="landing fiddle" style="margin-left:auto;color:var(--phos);font-size:11px;text-shadow:0 0 6px rgba(51,255,51,.6)">★</span>' : '';
+    const tag = (!isFav && f.live===false) ? '<span style="margin-left:auto;color:var(--muted);font-size:9.5px;letter-spacing:.05em">src</span>' : '';
+    it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl">'+humanize(f.friendly)+'</div>'+star+tag;
     it.onclick=()=>open(f,it); return it;
   }
   function render(filter=''){
@@ -191,11 +197,19 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles'): string 
     }
   }
   render();
-  // deep-link support (exact framework/name match, then expand + select)
+  // Land on: (1) a deep-linked fiddle if the URL has a hash, else (2) the developer's
+  // favorite fiddle, else (3) the "select a fiddle" prompt. Both routes reuse open().
+  function landOn(fw, name){
+    const f=FIDDLES.find(x=>x.framework===fw&&x.name===name);
+    if(f) open(f, [...document.querySelectorAll('.item')].find(e=>e.dataset.key===fw+'/'+name));
+    return !!f;
+  }
   if(location.hash){
     const [fw,name]=location.hash.slice(1).split('/');
-    const f=FIDDLES.find(x=>x.framework===fw&&x.name===name);
-    if(f){ render(); open(f, [...document.querySelectorAll('.item')].find(e=>e.dataset.key===fw+'/'+name)); }
+    landOn(fw,name);
+  } else if(FAVORITE){
+    const [fw,name]=FAVORITE.split('/');
+    landOn(fw,name);
   }
 </script>
 </body>
