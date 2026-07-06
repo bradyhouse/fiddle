@@ -441,6 +441,7 @@ interface AssembleResult {
 /** How a fiddle gets into the portfolio: build its dist, copy it static, or skip. */
 function renderMode(dir: string, start: string): 'static' | 'build' | 'skip' {
   if (!start || start.startsWith('node')) return 'skip' // not a browser fiddle (node/bash/c/…)
+  if (builtDir(dir)) return 'build' // a committed dist/build → serve it even without a build script
   const pkgPath = path.join(dir, 'package.json')
   if (fs.existsSync(pkgPath)) {
     try {
