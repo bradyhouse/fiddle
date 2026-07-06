@@ -607,6 +607,14 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
   let srcOnly = 0
   let skipped = 0
 
+  // Many fiddles pull shared libs (jquery, three.min.js, html5shiv…) from trees ABOVE
+  // their own dir: framework-level `../resources` (<home>/<fw>/resources) and site-level
+  // `../../resources` (<home>/resources). github.io deploys the whole tree so these
+  // resolve; a per-fiddle copy drops them → 404'd scripts + blank demos. Collect the
+  // real source dirs (derived from each fiddle's path, home-agnostic) and copy once.
+  const sharedFwRes = new Map<string, string>() // framework -> its resources/ source dir
+  const sharedSiteRes = new Set<string>() // site-root resources/ source dir(s)
+
   for (const it of all) {
     let start: string
     try {
@@ -615,6 +623,13 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
       skipped++
       continue // not adopted / not a fiddle
     }
+    const fwRoot = path.dirname(it.dir) // <home>/<fw>
+    if (!sharedFwRes.has(it.framework)) {
+      const r = path.join(fwRoot, 'resources')
+      if (fs.existsSync(r)) sharedFwRes.set(it.framework, r)
+    }
+    const siteRes = path.join(path.dirname(fwRoot), 'resources') // <home>/resources
+    if (fs.existsSync(siteRes)) sharedSiteRes.add(siteRes)
     const mode = renderMode(it.dir, start)
     const dest = path.join(repo, 'f', it.framework, it.name)
     let rendered = false
@@ -673,6 +688,21 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
 
     items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb: false, live, files })
   }
+
+  // Shared resource trees (see above): place them where the relative refs resolve —
+  // <repo>/f/resources (for ../../resources) and <repo>/f/<fw>/resources (for
+  // ../resources). Must land BEFORE the screenshot pass so live demos can load them.
+  const fRoot = path.join(repo, 'f')
+  let sharedCopied = 0
+  for (const src of sharedSiteRes) {
+    fs.cpSync(src, path.join(fRoot, 'resources'), { recursive: true })
+    sharedCopied++
+  }
+  for (const [fw, src] of sharedFwRes) {
+    fs.cpSync(src, path.join(fRoot, fw, 'resources'), { recursive: true })
+    sharedCopied++
+  }
+  if (sharedCopied) console.log(c.dim(`  📦 ${sharedCopied} shared resource tree(s) copied (jquery/three/html5shiv/…)`))
 
   // Thumbnails: screenshot the assembled, SERVED portfolio (correct for rebased
   // builds + static fiddles; one server for all — not a dev server per fiddle).
