@@ -767,7 +767,8 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
 
   const manifest = buildManifest(items)
   fs.writeFileSync(path.join(repo, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
-  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest, 'fiddles', loadConfig().favorite))
+  const cfg = loadConfig()
+  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest, 'fiddles', cfg.favorite, cfg.homeUrl))
   return { count: manifest.length, staticCount, built, srcOnly, skipped }
 }
 

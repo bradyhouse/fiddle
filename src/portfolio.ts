@@ -28,8 +28,13 @@ export function buildManifest(
     .sort((a, b) => a.framework.localeCompare(b.framework) || a.name.localeCompare(b.name))
 }
 
-export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite = ''): string {
+export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite = '', homeUrl = ''): string {
   const DATA = JSON.stringify(manifest)
+  // Optional "← home" link (config `homeUrl`) — set when the gallery is nested under a parent
+  // site (e.g. `../`); omitted for standalone `fiddle preview`. Escaped for the HTML attribute.
+  const homeLink = homeUrl
+    ? `<a class="home" href="${homeUrl.replace(/"/g, '&quot;')}">← home</a>`
+    : ''
   // The landing fiddle (config `favorite`, as "<framework>/<name>"). Only honored if it
   // matches a real entry — otherwise the shell falls back to the "select a fiddle" prompt.
   const FAV = JSON.stringify(favorite && manifest.some((m) => `${m.framework}/${m.name}` === favorite) ? favorite : '')
@@ -46,10 +51,12 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
   html,body{height:100%}
   body{background:var(--ink);color:var(--text);font-family:var(--sans);display:grid;grid-template-columns:300px 1fr;grid-template-rows:auto 1fr;height:100vh;overflow:hidden}
   /* header */
-  header{grid-column:1/-1;background:var(--phos-bg);border-bottom:1px solid var(--line);position:relative;overflow:hidden;padding:14px 20px;font-family:var(--mono)}
+  header{grid-column:1/-1;background:var(--phos-bg);border-bottom:1px solid var(--line);position:relative;overflow:hidden;padding:14px 20px;font-family:var(--mono);display:flex;align-items:center;justify-content:space-between;gap:16px}
   header::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0,rgba(0,0,0,.2) 1px,transparent 1px,transparent 3px);opacity:.6}
   header h1{position:relative;color:var(--phos);font-size:15px;font-weight:700;letter-spacing:.02em;text-shadow:0 0 7px rgba(51,255,51,.5)}
   header h1 .dim{color:var(--phos-dim);font-weight:400}
+  header .home{position:relative;flex:none;color:var(--phos-dim);text-decoration:none;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:5px 11px;transition:.12s}
+  header .home:hover{color:var(--phos);border-color:var(--phos-dim);text-shadow:0 0 6px rgba(51,255,51,.5)}
   /* sidebar */
   aside{border-right:1px solid var(--line);overflow-y:auto;padding:12px}
   .search{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--text);
@@ -91,7 +98,7 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
 </style>
 </head>
 <body>
-  <header><h1>brady@house<span class="dim">:~/</span>fiddles<span class="dim"> — a decade of build-to-learn</span></h1></header>
+  <header><h1>brady@house<span class="dim">:~/</span>fiddles<span class="dim"> — a decade of build-to-learn</span></h1>${homeLink}</header>
   <aside>
     <input class="search" placeholder="search framework or fiddle…" oninput="render(this.value)">
     <div id="nav"></div>
