@@ -727,6 +727,33 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
   }
   if (sharedCopied) console.log(c.dim(`  📦 ${sharedCopied} shared resource tree(s) copied (jquery/three/html5shiv/…)`))
 
+  // Strip publish-junk from the assembled tree: JS/CSS source maps (dev-only, never used
+  // at runtime — angular ag-grid fiddles alone ship 160MB+ of .map) and heavy video files.
+  // Keeps the portfolio small enough to host on GitHub Pages (~1GB site limit).
+  const junk = { maps: 0, media: 0, bytes: 0 }
+  const MEDIA = /\.(mov|mp4|webm|avi|mkv|m4v)$/i
+  const stripWalk = (d: string): void => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name)
+      if (e.isDirectory()) stripWalk(p)
+      else if (e.name.endsWith('.map') || MEDIA.test(e.name)) {
+        try {
+          junk.bytes += fs.statSync(p).size
+          fs.rmSync(p)
+          if (e.name.endsWith('.map')) junk.maps++
+          else junk.media++
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  if (fs.existsSync(fRoot)) stripWalk(fRoot)
+  if (junk.maps || junk.media)
+    console.log(
+      c.dim(`  🧹 stripped ${junk.maps} source maps + ${junk.media} media (${Math.round(junk.bytes / 1048576)}MB)`)
+    )
+
   // Thumbnails: screenshot the assembled, SERVED portfolio (correct for rebased
   // builds + static fiddles; one server for all — not a dev server per fiddle).
   // Only LIVE fiddles have a rendered page to shoot.
