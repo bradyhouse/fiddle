@@ -80,8 +80,8 @@ and injects a **Playwright smoke test + `CLAUDE.md`** into every new fiddle by d
 | `fiddle start <framework> <name>` | run a fiddle's dev command (name or number) |
 | `fiddle edit <framework> <name>` | open it in your editor + spawn a terminal |
 | `fiddle build [framework] [name]` | build a fiddle (the one you're in, one by name, or all) |
-| `fiddle preview` | build the collection + serve the portfolio locally |
-| `fiddle publish` | build all + regenerate the portfolio + push |
+| `fiddle preview [name]` | build the collection + serve the portfolio locally (a `name` updates just that fiddle — seconds, not minutes) |
+| `fiddle publish [name]` | build all + regenerate the portfolio + push (a `name` publishes just that one incrementally) |
 
 ## Frameworks
 
@@ -97,6 +97,8 @@ Settings live in `~/.fiddle/config.json` (env overrides: `FIDDLE_HOME`, `FIDDLE_
 |---|---|---|
 | `home` | `~/fiddles` | where the collection lives |
 | `publishRepo` | _unset_ | portfolio publish target (a git working dir — use a subdir) |
+| `favorite` | _unset_ | the fiddle the portfolio landing opens on, as `<framework>/<name>` |
+| `homeUrl` | _unset_ | a "← home" link in the gallery header (e.g. `../` when nested under a site) |
 | `editor` | `code` | opened by `fiddle edit` |
 | `terminal` | `Terminal` | spawned by `fiddle edit` (macOS) |
 
