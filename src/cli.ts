@@ -744,7 +744,22 @@ async function assembleOne(
 
   if (screenshots && r.item.live) {
     const shot = await captureServed(repo, [r.item], 4599)
-    if (shot.has(`${it.framework}/${it.name}`)) r.item.hasThumb = true
+    if (shot.done.has(`${it.framework}/${it.name}`)) r.item.hasThumb = true
+    if (shot.broken.has(`${it.framework}/${it.name}`)) {
+      // broken-live → demote to a browsable source-only card
+      const dest = path.join(fRoot, it.framework, it.name)
+      fs.rmSync(dest, { recursive: true, force: true })
+      fs.mkdirSync(dest, { recursive: true })
+      copyFiddle(it.dir, dest)
+      r.item.live = false
+      r.item.files = sourceFiles(dest)
+      r.item.hasThumb = false
+      try {
+        fs.rmSync(path.join(repo, 'thumbs', `${it.framework}__${it.name}.png`))
+      } catch {
+        /* no thumb */
+      }
+    }
   }
 
   const existing: ManifestEntry[] = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
@@ -824,8 +839,32 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
     const liveItems = items.filter((i) => i.live)
     console.log(c.dim(`  📸 thumbnailing ${liveItems.length} live fiddles…`))
     const shot = await captureServed(repo, liveItems, 4599, (d, t) => console.log(c.dim(`     ${d}/${t}`)))
-    for (const i of items) if (shot.has(`${i.framework}/${i.name}`)) i.hasThumb = true
-    console.log(c.dim(`  📸 ${shot.size} thumbnails captured`))
+    for (const i of items) if (shot.done.has(`${i.framework}/${i.name}`)) i.hasThumb = true
+    console.log(c.dim(`  📸 ${shot.done.size} thumbnails captured`))
+    // Demote broken-live fiddles (errored + blank) to browsable source-only cards — no dead thumbs.
+    if (shot.broken.size) {
+      const byKey = new Map(all.map((it) => [`${it.framework}/${it.name}`, it]))
+      let demoted = 0
+      for (const key of shot.broken) {
+        const item = items.find((i) => `${i.framework}/${i.name}` === key)
+        const it = byKey.get(key)
+        if (!item || !it) continue
+        const dest = path.join(fRoot, it.framework, it.name)
+        fs.rmSync(dest, { recursive: true, force: true })
+        fs.mkdirSync(dest, { recursive: true })
+        copyFiddle(it.dir, dest) // replace the broken render with browsable source
+        item.live = false
+        item.files = sourceFiles(dest)
+        item.hasThumb = false
+        try {
+          fs.rmSync(path.join(repo, 'thumbs', `${it.framework}__${it.name}.png`))
+        } catch {
+          /* no thumb */
+        }
+        demoted++
+      }
+      if (demoted) console.log(c.dim(`  ↓ ${demoted} broken-live fiddle(s) → source-only`))
+    }
   }
 
   const manifest = buildManifest(items)

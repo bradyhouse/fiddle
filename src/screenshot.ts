@@ -83,24 +83,30 @@ export async function captureServed(
   entries: { framework: string; name: string }[],
   port = 4599,
   onProgress?: (done: number, total: number) => void
-): Promise<Set<string>> {
+): Promise<{ done: Set<string>; broken: Set<string> }> {
   const done = new Set<string>()
+  const broken = new Set<string>() // errored AND rendered nothing → demote to source-only
   let pw: any
   try {
     pw = await import('playwright')
   } catch {
-    return done // playwright not installed — portfolio falls back to placeholder thumbs
+    return { done, broken } // playwright not installed — portfolio falls back to placeholder thumbs
   }
   const server = await serveDir(repo, port).catch(() => null)
-  if (!server) return done
+  if (!server) return { done, broken }
   const thumbs = path.join(repo, 'thumbs')
   fs.mkdirSync(thumbs, { recursive: true })
   const browser = await pw.chromium.launch()
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 }, deviceScaleFactor: 2 })
+    let errored = false
+    page.on('pageerror', () => {
+      errored = true
+    })
     let i = 0
     for (const e of entries) {
       i++
+      errored = false
       try {
         await page
           .goto(`http://localhost:${port}/f/${e.framework}/${e.name}/`, { waitUntil: 'networkidle', timeout: 10_000 })
@@ -111,6 +117,19 @@ export async function captureServed(
         await page.waitForTimeout(1500)
         await page.screenshot({ path: path.join(thumbs, `${e.framework}__${e.name}.png`) })
         done.add(`${e.framework}/${e.name}`)
+        // Broken-live detection: an uncaught error AND a truly empty render (no text/svg/img/
+        // canvas) → the portfolio demotes it to a browsable source-only card (no dead thumbnail).
+        // Conservative on purpose — a sparse-but-working demo, or one that only logs an error, stays live.
+        const empty = await page
+          .evaluate(() => {
+            const txt = (document.body?.innerText || '').trim().length
+            const svg = document.querySelectorAll('svg *').length
+            const img = [...document.querySelectorAll('img')].filter((i) => (i as HTMLImageElement).naturalWidth > 0).length
+            const canvas = document.querySelectorAll('canvas').length
+            return txt < 10 && svg === 0 && img === 0 && canvas === 0
+          })
+          .catch(() => false)
+        if (errored && empty) broken.add(`${e.framework}/${e.name}`)
       } catch {
         /* skip a fiddle that won't load */
       }
@@ -120,5 +139,5 @@ export async function captureServed(
     await browser.close()
     server.close()
   }
-  return done
+  return { done, broken }
 }
