@@ -27,7 +27,7 @@ import {
   writeMeta
 } from './core.js'
 import { claudeMd } from './defaults.js'
-import { buildManifest, shellHtml } from './portfolio.js'
+import { buildManifest, shellHtml, ManifestEntry } from './portfolio.js'
 import { captureServed } from './screenshot.js'
 import { serveDir } from './serve.js'
 import { banner, c, nope } from './ui.js'
@@ -617,6 +617,148 @@ function sourceFiles(dir: string, max = 15): string[] {
  * index.html to fall back to). Resilient: one bad fiddle never aborts the run.
  * Shared by `publish` (→ a git repo) and `preview` (→ a scratch dir).
  */
+type AssembleItem = { framework: string; name: string; friendly: string; hasThumb: boolean; live: boolean; files: string[] }
+
+// Remove dev-only publish junk (source maps + heavy video) from an assembled subtree — keeps
+// the portfolio small enough for a GitHub Pages site (~1GB). Runtime rendering is unaffected.
+function stripPublishJunk(dir: string): { maps: number; media: number; bytes: number } {
+  const junk = { maps: 0, media: 0, bytes: 0 }
+  const MEDIA = /\.(mov|mp4|webm|avi|mkv|m4v)$/i
+  const walk = (d: string): void => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name)
+      if (e.isDirectory()) walk(p)
+      else if (e.name.endsWith('.map') || MEDIA.test(e.name)) {
+        try {
+          junk.bytes += fs.statSync(p).size
+          fs.rmSync(p)
+          if (e.name.endsWith('.map')) junk.maps++
+          else junk.media++
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  if (fs.existsSync(dir)) walk(dir)
+  return junk
+}
+
+// Assemble ONE fiddle into <repo>/f/<fw>/<name>/ (committed build, static copy, or source-only
+// fallback) and return its manifest item + the shared-resource source dirs it depends on. null =
+// not a fiddle / nothing to show. Shared by the full assemble AND the single-fiddle path.
+async function assembleFiddle(
+  repo: string,
+  it: { framework: string; name: string; dir: string },
+  doBuild: boolean
+): Promise<{ item: AssembleItem; fwRes: [string, string] | null; siteRes: string | null; kind: 'built' | 'static' | 'src' } | null> {
+  let start: string
+  try {
+    start = readMeta(it.dir).start
+  } catch {
+    return null // not adopted / not a fiddle
+  }
+  const fwRoot = path.dirname(it.dir)
+  const fwResPath = path.join(fwRoot, 'resources')
+  const siteResPath = path.join(path.dirname(fwRoot), 'resources')
+  const fwRes: [string, string] | null = fs.existsSync(fwResPath) ? [it.framework, fwResPath] : null
+  const siteRes: string | null = fs.existsSync(siteResPath) ? siteResPath : null
+
+  const mode = renderMode(it.dir, start)
+  const dest = path.join(repo, 'f', it.framework, it.name)
+  let rendered = false
+  let files: string[] = []
+  let live = true
+  let kind: 'built' | 'static' | 'src' = 'src'
+
+  if (mode === 'build') {
+    let out = builtDir(it.dir)
+    if (!out && doBuild) {
+      const installed = fs.existsSync(path.join(it.dir, 'node_modules')) || (await tryShell(NPM_INSTALL, it.dir, 120_000))
+      if (installed) {
+        await tryShell('npm run build -- --base=./', it.dir, 120_000)
+        out = builtDir(it.dir)
+      }
+    }
+    if (out) {
+      fs.rmSync(dest, { recursive: true, force: true })
+      fs.mkdirSync(dest, { recursive: true })
+      fs.cpSync(out, dest, { recursive: true })
+      rebaseBuiltDist(dest, it.framework, it.name)
+      hideDeadRibbons(dest)
+      rendered = true
+      kind = 'built'
+    }
+  } else if (mode === 'static' && staticAssetsOk(it.dir)) {
+    fs.rmSync(dest, { recursive: true, force: true })
+    fs.mkdirSync(dest, { recursive: true })
+    copyFiddle(it.dir, dest)
+    files = sourceFiles(dest)
+    hideDeadRibbons(dest)
+    rendered = true
+    kind = 'static'
+  }
+
+  if (!rendered) {
+    fs.rmSync(dest, { recursive: true, force: true })
+    fs.mkdirSync(dest, { recursive: true })
+    copyFiddle(it.dir, dest)
+    files = sourceFiles(dest)
+    if (!files.length) return null // nothing to show
+    live = false
+    kind = 'src'
+  }
+
+  return {
+    item: { framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb: false, live, files },
+    fwRes,
+    siteRes,
+    kind
+  }
+}
+
+// Incremental: update ONE fiddle in an already-assembled portfolio — its dir, its screenshot, and
+// its manifest entry — without touching the other 500+. Requires a prior full assemble (a manifest).
+async function assembleOne(
+  repo: string,
+  name: string,
+  screenshots: boolean,
+  doBuild: boolean
+): Promise<{ framework: string; name: string; live: boolean; hasThumb: boolean; isNew: boolean }> {
+  const manifestPath = path.join(repo, 'manifest.json')
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`no assembled portfolio at ${repo} — run a full \`fiddle preview\`/\`publish\` once first`)
+  }
+  const it = listCollection().find((x) => x.name === name || friendly(x.dir) === name || `${x.framework}/${x.name}` === name)
+  if (!it) throw new Error(`no fiddle matching "${name}" — see \`fiddle list\``)
+
+  const r = await assembleFiddle(repo, it, doBuild)
+  if (!r) throw new Error(`nothing to assemble for ${it.framework}/${it.name}`)
+
+  // Ensure the shared resource trees this fiddle references exist (copy if missing).
+  const fRoot = path.join(repo, 'f')
+  if (r.siteRes && !fs.existsSync(path.join(fRoot, 'resources'))) fs.cpSync(r.siteRes, path.join(fRoot, 'resources'), { recursive: true })
+  if (r.fwRes && !fs.existsSync(path.join(fRoot, r.fwRes[0], 'resources'))) fs.cpSync(r.fwRes[1], path.join(fRoot, r.fwRes[0], 'resources'), { recursive: true })
+
+  stripPublishJunk(path.join(fRoot, it.framework, it.name))
+
+  if (screenshots && r.item.live) {
+    const shot = await captureServed(repo, [r.item], 4599)
+    if (shot.has(`${it.framework}/${it.name}`)) r.item.hasThumb = true
+  }
+
+  const existing: ManifestEntry[] = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+  const isNew = !existing.some((e) => e.framework === it.framework && e.name === it.name)
+  const merged = existing.filter((e) => !(e.framework === it.framework && e.name === it.name))
+  merged.push(buildManifest([r.item])[0])
+  merged.sort((a, b) => a.framework.localeCompare(b.framework) || a.name.localeCompare(b.name))
+  fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2) + '\n')
+  const cfg = loadConfig()
+  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(merged, 'fiddles', cfg.favorite, cfg.homeUrl))
+
+  return { framework: it.framework, name: it.name, live: r.item.live, hasThumb: r.item.hasThumb, isNew }
+}
+
 async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: boolean): Promise<AssembleResult> {
   const all = listCollection()
   if (!all.length) {
@@ -639,77 +781,17 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
   const sharedSiteRes = new Set<string>() // site-root resources/ source dir(s)
 
   for (const it of all) {
-    let start: string
-    try {
-      start = readMeta(it.dir).start
-    } catch {
+    const r = await assembleFiddle(repo, it, doBuild)
+    if (!r) {
       skipped++
-      continue // not adopted / not a fiddle
+      continue
     }
-    const fwRoot = path.dirname(it.dir) // <home>/<fw>
-    if (!sharedFwRes.has(it.framework)) {
-      const r = path.join(fwRoot, 'resources')
-      if (fs.existsSync(r)) sharedFwRes.set(it.framework, r)
-    }
-    const siteRes = path.join(path.dirname(fwRoot), 'resources') // <home>/resources
-    if (fs.existsSync(siteRes)) sharedSiteRes.add(siteRes)
-    const mode = renderMode(it.dir, start)
-    const dest = path.join(repo, 'f', it.framework, it.name)
-    let rendered = false
-    let files: string[] = []
-
-    let live = true
-
-    if (mode === 'build') {
-      // Prefer the committed build output (dist/ or build/) — a decade-old fiddle
-      // rarely rebuilds on a modern toolchain, but what it shipped still renders.
-      // Only rebuild when nothing is committed; never iframe raw build source.
-      let out = builtDir(it.dir)
-      if (!out && doBuild) {
-        const installed =
-          fs.existsSync(path.join(it.dir, 'node_modules')) || (await tryShell(NPM_INSTALL, it.dir, 120_000))
-        if (installed) {
-          await tryShell('npm run build -- --base=./', it.dir, 120_000)
-          out = builtDir(it.dir)
-        }
-      }
-      if (out) {
-        fs.rmSync(dest, { recursive: true, force: true })
-        fs.mkdirSync(dest, { recursive: true })
-        fs.cpSync(out, dest, { recursive: true })
-        rebaseBuiltDist(dest, it.framework, it.name) // fix absolute base baked to the old deploy path
-        hideDeadRibbons(dest)
-        rendered = true
-        built++
-      }
-    } else if (mode === 'static' && staticAssetsOk(it.dir)) {
-      // static & self-contained (its local scripts exist) — copy as-is
-      fs.rmSync(dest, { recursive: true, force: true })
-      fs.mkdirSync(dest, { recursive: true })
-      copyFiddle(it.dir, dest) // excludes node_modules/dist/.git/screenshot.png
-      files = sourceFiles(dest) // the copied source is browsable in the portfolio
-      hideDeadRibbons(dest)
-      rendered = true
-      staticCount++
-    }
-
-    // Not a live demo (node/CLI fiddle, a build with no output, or a page whose
-    // local assets are missing) → keep it as a source-only entry (browsable code,
-    // no iframe) instead of dropping it. Skip only when there's no source to show.
-    if (!rendered) {
-      fs.rmSync(dest, { recursive: true, force: true })
-      fs.mkdirSync(dest, { recursive: true })
-      copyFiddle(it.dir, dest)
-      files = sourceFiles(dest)
-      if (!files.length) {
-        skipped++
-        continue
-      }
-      live = false
-      srcOnly++
-    }
-
-    items.push({ framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb: false, live, files })
+    if (r.fwRes && !sharedFwRes.has(r.fwRes[0])) sharedFwRes.set(r.fwRes[0], r.fwRes[1])
+    if (r.siteRes) sharedSiteRes.add(r.siteRes)
+    if (r.kind === 'built') built++
+    else if (r.kind === 'static') staticCount++
+    else srcOnly++
+    items.push(r.item)
   }
 
   // Shared resource trees (see above): place them where the relative refs resolve —
@@ -727,28 +809,9 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
   }
   if (sharedCopied) console.log(c.dim(`  📦 ${sharedCopied} shared resource tree(s) copied (jquery/three/html5shiv/…)`))
 
-  // Strip publish-junk from the assembled tree: JS/CSS source maps (dev-only, never used
-  // at runtime — angular ag-grid fiddles alone ship 160MB+ of .map) and heavy video files.
-  // Keeps the portfolio small enough to host on GitHub Pages (~1GB site limit).
-  const junk = { maps: 0, media: 0, bytes: 0 }
-  const MEDIA = /\.(mov|mp4|webm|avi|mkv|m4v)$/i
-  const stripWalk = (d: string): void => {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      const p = path.join(d, e.name)
-      if (e.isDirectory()) stripWalk(p)
-      else if (e.name.endsWith('.map') || MEDIA.test(e.name)) {
-        try {
-          junk.bytes += fs.statSync(p).size
-          fs.rmSync(p)
-          if (e.name.endsWith('.map')) junk.maps++
-          else junk.media++
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-  }
-  if (fs.existsSync(fRoot)) stripWalk(fRoot)
+  // Strip dev-only publish junk (source maps + heavy video) so the portfolio fits a
+  // GitHub Pages site (~1GB). Runtime rendering is unaffected.
+  const junk = stripPublishJunk(fRoot)
   if (junk.maps || junk.media)
     console.log(
       c.dim(`  🧹 stripped ${junk.maps} source maps + ${junk.media} media (${Math.round(junk.bytes / 1048576)}MB)`)
@@ -776,23 +839,31 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
 program
   .command('preview')
   .description('build the portfolio into a scratch dir and serve it locally — no config, no push')
+  .argument('[name]', 'update just ONE fiddle (fast incremental) — needs a prior full preview')
   .option('-p, --port <n>', 'port to serve on', '4321')
   .option('--no-screenshots', 'skip auto-thumbnails (faster)')
   .option('--no-build', 'copy static fiddles only — skip npm build (fast for a big archive)')
   .option('--no-open', "don't open the browser")
-  .action(async (opts) => {
+  .action(async (name, opts) => {
     const dir = path.join(os.tmpdir(), 'fiddle-preview') // scratch — never pollute the collection repo
     console.log(banner('preview'))
-    const r = await assemblePortfolio(dir, opts.screenshots, opts.build)
-    if (!r.count) return
+    let hash = ''
+    if (name) {
+      const u = await assembleOne(dir, name, opts.screenshots, opts.build)
+      hash = `#${u.framework}/${u.name}`
+      console.log(`\n  ▸ updated ${c.green(`${u.framework}/${u.name}`)} ${c.dim(`(${u.isNew ? 'new · ' : ''}${u.live ? 'live' : 'source-only'}${u.hasThumb ? ' · thumbnail' : ''})`)}`)
+    } else {
+      const r = await assemblePortfolio(dir, opts.screenshots, opts.build)
+      if (!r.count) return
+      console.log(
+        `\n  ▸ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.srcOnly} source · ${r.skipped} skipped)`)}`
+      )
+    }
     const port = parseInt(opts.port, 10) || 4321
     const server = await serveDir(dir, port)
-    const url = `http://localhost:${port}`
-    console.log(
-      `\n  ▸ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.srcOnly} source · ${r.skipped} skipped)`)} at ${c.green(url)}`
-    )
-    console.log(c.dim('  local preview — run `fiddle publish` to ship it.  Ctrl-C to stop\n'))
-    if (opts.open) openUrl(url)
+    const url = `http://localhost:${port}/`
+    console.log(c.dim(`  local preview at ${url}${hash} — run \`fiddle publish\` to ship it.  Ctrl-C to stop\n`))
+    if (opts.open) openUrl(url + hash)
     await new Promise<void>((resolve) => {
       process.on('SIGINT', () => {
         server.close()
@@ -806,18 +877,24 @@ program
 program
   .command('publish')
   .description('build every fiddle, regenerate the portfolio shell, and push')
+  .argument('[name]', 'publish just ONE fiddle (fast incremental) — needs a prior full publish')
   .option('--no-screenshots', 'skip auto-thumbnails')
   .option('--no-build', 'copy static fiddles only — skip npm build')
   .option('--no-push', 'assemble but do not git commit/push')
-  .action(async (opts) => {
+  .action(async (name, opts) => {
     const repo = process.env.FIDDLE_PUBLISH_REPO || loadConfig().publishRepo
     if (!repo) throw new Error('no target — run `fiddle config set publishRepo <dir>` first (or `fiddle preview` to look first)')
     console.log(banner('publish'))
-    const r = await assemblePortfolio(repo, opts.screenshots, opts.build)
-    if (!r.count) return
-    console.log(
-      `\n  ✓ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.srcOnly} source · ${r.skipped} skipped)`)} → ${c.dim(repo)}`
-    )
+    if (name) {
+      const u = await assembleOne(repo, name, opts.screenshots, opts.build)
+      console.log(`\n  ✓ updated ${c.green(`${u.framework}/${u.name}`)} ${c.dim(`(${u.isNew ? 'new · ' : ''}${u.live ? 'live' : 'source-only'}${u.hasThumb ? ' · thumbnail' : ''}) → ${repo}`)}`)
+    } else {
+      const r = await assemblePortfolio(repo, opts.screenshots, opts.build)
+      if (!r.count) return
+      console.log(
+        `\n  ✓ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.srcOnly} source · ${r.skipped} skipped)`)} → ${c.dim(repo)}`
+      )
+    }
 
     if (opts.push && fs.existsSync(path.join(repo, '.git'))) {
       await runShell('git add index.html manifest.json f thumbs && git commit -m "fiddle publish" && git push', repo).catch(
