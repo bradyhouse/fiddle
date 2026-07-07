@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/npm/v/@bradyhouse/fiddle.svg" alt="npm">
+  <img src="https://img.shields.io/npm/v/@hetalhouse/fiddle.svg" alt="npm">
   <img src="https://img.shields.io/badge/license-MIT-brightgreen.svg" alt="MIT license">
   <img src="https://img.shields.io/badge/node-%3E%3D18-blue" alt="node >=18">
 </p>
@@ -9,7 +9,7 @@
 > A home for your framework experiments. Scaffold a sandbox, iterate, and it auto-appears in a unified portfolio — no plumbing.
 
 ```bash
-npm i -g @bradyhouse/fiddle
+npm i -g @hetalhouse/fiddle
 fiddle setup                    # one-time: config + prerequisites
 
 fiddle create three spinner     # scaffold a three.js sandbox

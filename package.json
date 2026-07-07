@@ -1,5 +1,5 @@
 {
-  "name": "@bradyhouse/fiddle",
+  "name": "@hetalhouse/fiddle",
   "version": "0.1.0",
   "description": "Scaffold and run throwaway framework sandboxes ('fiddles') — delegates to official scaffolders (Vite, Angular CLI…) where they exist, ships curated templates where they don't.",
   "type": "module",
