@@ -114,9 +114,7 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
   .info{display:none;border-bottom:1px solid var(--line);background:var(--phos-bg);padding:10px 16px;font-family:var(--mono);position:relative}
   .info::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0,rgba(0,0,0,.14) 1px,transparent 1px,transparent 3px);opacity:.5}
   .info>*{position:relative}
-  .info .desc{color:var(--text);font-size:12px;line-height:1.55}
-  .info .desc.clamped{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
-  .info .desc.expanded{max-height:38vh;overflow-y:auto}
+  .info .desc{color:var(--text);font-size:12px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
   .info .more{font-family:var(--mono);font-size:10.5px;color:var(--phos-dim);background:transparent;border:none;cursor:pointer;padding:2px 0;margin-top:2px}
   .info .more:hover{color:var(--phos)}
   .info .d{color:var(--muted);font-size:10.5px;white-space:nowrap}
@@ -183,16 +181,14 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
     // the description (full width) plus a meta row: date · tags · lineage · pen.
     if(!(f.desc || (f.tags&&f.tags.length) || f.fork || f.pen)){ info.style.display='none'; return; }
     if(f.desc){
-      const p=document.createElement('div'); p.className='desc clamped'; p.textContent=f.desc; info.appendChild(p);
-      // "more" toggle — only when the 4-line clamp actually hides text.
+      const p=document.createElement('div'); p.className='desc'; p.textContent=f.desc; info.appendChild(p);
+      // When the 4-line clamp hides text, "… readme" opens the full README in the
+      // source view (every assembled fiddle ships its README in files[]).
       requestAnimationFrame(function(){
-        if(p.scrollHeight > p.clientHeight + 1){
-          const btn=document.createElement('button'); btn.className='more'; btn.textContent='▾ more';
-          btn.onclick=function(){
-            const expand = p.classList.contains('clamped');
-            p.classList.toggle('clamped', !expand); p.classList.toggle('expanded', expand);
-            btn.textContent = expand ? '▴ less' : '▾ more';
-          };
+        const readme=(f.files||[]).find(x=>/^readme\.(md|markdown)$/i.test(x));
+        if(readme && p.scrollHeight > p.clientHeight + 1){
+          const btn=document.createElement('button'); btn.className='more'; btn.textContent='… readme';
+          btn.onclick=function(){ setView(true); loadCode(f, readme); };
           p.after(btn);
         }
       });
@@ -240,16 +236,17 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
     location.hash = f.framework + '/' + f.name;
   }
   function toggleCode(){ if(current){ setView(!codeOn); if(codeOn) loadCode(current); } }
-  function loadCode(f){
+  function loadCode(f, startFile){
     const base = f.url.replace(/[^/]*$/, '');
     const files = (f.files && f.files.length) ? f.files : ['index.html'];
+    const start = Math.max(0, files.indexOf(startFile)); // e.g. the "… readme" link opens on the README tab
     tabs.innerHTML=''; src.textContent='loading…';
     files.forEach((fp,i)=>{
-      const t=document.createElement('button'); t.className='tab'+(i===0?' active':''); t.textContent=fp;
+      const t=document.createElement('button'); t.className='tab'+(i===start?' active':''); t.textContent=fp;
       t.onclick=()=>{ tabs.querySelectorAll('.tab.active').forEach(x=>x.classList.remove('active')); t.classList.add('active'); fetchFile(base+fp); };
       tabs.appendChild(t);
     });
-    fetchFile(base+files[0]);
+    fetchFile(base+files[start]);
   }
   async function fetchFile(url){
     try{ const r=await fetch(url); src.textContent = r.ok ? await r.text() : '// '+r.status+' — '+url; }

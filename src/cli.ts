@@ -725,6 +725,21 @@ async function assembleFiddle(
     kind = 'src'
   }
 
+  // Ship the README alongside every assembled fiddle (built dists don't carry it)
+  // and list it in files[] — the info card's "… readme" link and the source view
+  // both fetch it from the assembled tree.
+  const readmeName = ['README.md', 'README.markdown', 'readme.md', 'readme.markdown'].find((n) =>
+    fs.existsSync(path.join(it.dir, n))
+  )
+  if (readmeName) {
+    try {
+      fs.copyFileSync(path.join(it.dir, readmeName), path.join(dest, readmeName))
+      if (!files.some((f) => f.toLowerCase() === readmeName.toLowerCase())) files.unshift(readmeName)
+    } catch {
+      /* readme is a nicety — never fail the assemble over it */
+    }
+  }
+
   return {
     item: {
       framework: it.framework,
