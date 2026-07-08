@@ -94,10 +94,14 @@ test('.fiddle.json description overrides a boilerplate README', () => {
   assert.equal(readFiddleMeta(dir)!.desc, 'Tetris built to learn the composition API.')
 })
 
-test('long descriptions are truncated at a word boundary', () => {
-  const dir = fixture({ 'README.md': `### Description\n\n${'word '.repeat(300)}\n` })
-  const m = readFiddleMeta(dir)!
-  assert.ok(m.desc.length <= 600)
+test('descriptions ship in full — only pathological lengths hit the safety cap', () => {
+  // A realistic long description (~1.5KB) survives intact…
+  const real = fixture({ 'README.md': `### Description\n\n${'word '.repeat(300)}`.trim() })
+  assert.ok(!readFiddleMeta(real)!.desc.endsWith('…'))
+  // …while a pathological one (>4KB) is word-boundary truncated.
+  const patho = fixture({ 'README.md': `### Description\n\n${'word '.repeat(1000)}\n` })
+  const m = readFiddleMeta(patho)!
+  assert.ok(m.desc.length <= 4000)
   assert.match(m.desc, /…$/)
 })
 

@@ -111,10 +111,14 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
   .toggle:hover{color:var(--phos);border-color:var(--phos-dim)}
   .bar a{color:var(--phos-dim);text-decoration:none}.bar a:hover{color:var(--phos)}
   /* README info card — the "what is this?" layer (parsed from each fiddle's README) */
-  .info{display:none;border-bottom:1px solid var(--line);background:var(--phos-bg);padding:10px 16px;font-family:var(--mono);max-height:138px;overflow-y:auto;position:relative}
+  .info{display:none;border-bottom:1px solid var(--line);background:var(--phos-bg);padding:10px 16px;font-family:var(--mono);position:relative}
   .info::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0,rgba(0,0,0,.14) 1px,transparent 1px,transparent 3px);opacity:.5}
   .info>*{position:relative}
   .info .desc{color:var(--text);font-size:12px;line-height:1.55}
+  .info .desc.clamped{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .info .desc.expanded{max-height:38vh;overflow-y:auto}
+  .info .more{font-family:var(--mono);font-size:10.5px;color:var(--phos-dim);background:transparent;border:none;cursor:pointer;padding:2px 0;margin-top:2px}
+  .info .more:hover{color:var(--phos)}
   .info .d{color:var(--muted);font-size:10.5px;white-space:nowrap}
   .info .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;align-items:center}
   .info .tag{font-size:10px;color:var(--phos-dim);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap}
@@ -178,7 +182,21 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
     // No title row — the bar above already reads "framework / Title". The card is
     // the description (full width) plus a meta row: date · tags · lineage · pen.
     if(!(f.desc || (f.tags&&f.tags.length) || f.fork || f.pen)){ info.style.display='none'; return; }
-    if(f.desc){ const p=document.createElement('div'); p.className='desc'; p.textContent=f.desc; info.appendChild(p); }
+    if(f.desc){
+      const p=document.createElement('div'); p.className='desc clamped'; p.textContent=f.desc; info.appendChild(p);
+      // "more" toggle — only when the 4-line clamp actually hides text.
+      requestAnimationFrame(function(){
+        if(p.scrollHeight > p.clientHeight + 1){
+          const btn=document.createElement('button'); btn.className='more'; btn.textContent='▾ more';
+          btn.onclick=function(){
+            const expand = p.classList.contains('clamped');
+            p.classList.toggle('clamped', !expand); p.classList.toggle('expanded', expand);
+            btn.textContent = expand ? '▴ less' : '▾ more';
+          };
+          p.after(btn);
+        }
+      });
+    }
     const meta=document.createElement('div'); meta.className='meta';
     if(f.date){ const d=document.createElement('span'); d.className='d'; d.textContent=f.date; meta.appendChild(d); }
     (f.tags||[]).forEach(function(tg){ const s=document.createElement('span'); s.className='tag'; s.textContent=tg; meta.appendChild(s); });

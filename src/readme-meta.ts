@@ -19,7 +19,10 @@ export interface FiddleMeta {
 }
 
 const README_NAMES = ['README.md', 'README.markdown', 'readme.md', 'readme.markdown']
-const MAX_DESC = 600
+// Descriptions ship IN FULL — truncation is a presentation concern (the gallery
+// card line-clamps with a "more" toggle). The cap is only a safety net against
+// pathological files; the largest real description in a 540-fiddle corpus is ~3.9KB.
+const MAX_DESC = 4000
 const MAX_TAGS = 12
 
 /** Strip markdown noise down to plain text: images/comments/tags gone, links → their text. */
