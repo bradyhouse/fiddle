@@ -114,9 +114,8 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
   .info{display:none;border-bottom:1px solid var(--line);background:var(--phos-bg);padding:10px 16px;font-family:var(--mono);max-height:138px;overflow-y:auto;position:relative}
   .info::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0,rgba(0,0,0,.14) 1px,transparent 1px,transparent 3px);opacity:.5}
   .info>*{position:relative}
-  .info .t{color:var(--phos);font-size:12.5px;font-weight:700;letter-spacing:.02em;text-shadow:0 0 6px rgba(51,255,51,.35)}
-  .info .d{color:var(--muted);font-size:11px;margin-left:8px}
-  .info .desc{color:var(--text);font-size:12px;line-height:1.55;margin-top:5px;max-width:92ch}
+  .info .desc{color:var(--text);font-size:12px;line-height:1.55}
+  .info .d{color:var(--muted);font-size:10.5px;white-space:nowrap}
   .info .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;align-items:center}
   .info .tag{font-size:10px;color:var(--phos-dim);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap}
   .info a{color:var(--phos-dim);text-decoration:none;font-size:11px;border:1px solid var(--line);border-radius:6px;padding:2px 8px}
@@ -176,13 +175,12 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
   // content can't inject markup.
   function renderInfo(f){
     info.innerHTML='';
-    if(!(f.title || f.desc || (f.tags&&f.tags.length) || f.fork || f.pen)){ info.style.display='none'; return; }
-    const top=document.createElement('div');
-    const t=document.createElement('span'); t.className='t'; t.textContent=f.title||humanize(f.friendly); top.appendChild(t);
-    if(f.date){ const d=document.createElement('span'); d.className='d'; d.textContent='· '+f.date; top.appendChild(d); }
-    info.appendChild(top);
+    // No title row — the bar above already reads "framework / Title". The card is
+    // the description (full width) plus a meta row: date · tags · lineage · pen.
+    if(!(f.desc || (f.tags&&f.tags.length) || f.fork || f.pen)){ info.style.display='none'; return; }
     if(f.desc){ const p=document.createElement('div'); p.className='desc'; p.textContent=f.desc; info.appendChild(p); }
     const meta=document.createElement('div'); meta.className='meta';
+    if(f.date){ const d=document.createElement('span'); d.className='d'; d.textContent=f.date; meta.appendChild(d); }
     (f.tags||[]).forEach(function(tg){ const s=document.createElement('span'); s.className='tag'; s.textContent=tg; meta.appendChild(s); });
     if(f.fork){
       const parent=FIDDLES.find(x=>x.framework===f.framework&&x.name===f.fork);
