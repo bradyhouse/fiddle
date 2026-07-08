@@ -2,6 +2,8 @@
 // shell (sidebar nav grouped by framework → each fiddle in an iframe pane).
 // Phosphor/CRT aesthetic. Self-contained — deploys to any static host.
 
+import type { FiddleMeta } from './readme-meta.js'
+
 export interface ManifestEntry {
   framework: string
   name: string // fiddle-0001-foo
@@ -10,10 +12,26 @@ export interface ManifestEntry {
   thumb: string | null // thumbs/<framework>__<name>.png
   live: boolean // false = source-only (no runnable demo; opens straight to code)
   files: string[] // source files, relative to the fiddle dir (for the source view)
+  // README-derived metadata (see readme-meta.ts) — the "what is this?" layer.
+  // Optional: fields are omitted from the manifest when empty to keep it lean.
+  title?: string // "### Title" display name
+  desc?: string // "### Description" plaintext
+  date?: string // "### Creation Date"
+  tags?: string[] // "### Tags"
+  fork?: string // "### Forked From" fiddle name (same framework) — lineage deep-link
+  pen?: string // "### Published Version Link" (codepen/jsfiddle/…)
 }
 
 export function buildManifest(
-  items: { framework: string; name: string; friendly: string; hasThumb: boolean; live?: boolean; files?: string[] }[]
+  items: {
+    framework: string
+    name: string
+    friendly: string
+    hasThumb: boolean
+    live?: boolean
+    files?: string[]
+    meta?: FiddleMeta | null
+  }[]
 ): ManifestEntry[] {
   return items
     .map((i) => ({
@@ -23,13 +41,21 @@ export function buildManifest(
       url: `f/${i.framework}/${i.name}/`, // the DIRECTORY, not index.html — so SPA routers (vue-router) match their home route instead of falling to a 404 on "/index.html"
       thumb: i.hasThumb ? `thumbs/${i.framework}__${i.name}.png` : null,
       live: i.live !== false,
-      files: i.files ?? []
+      files: i.files ?? [],
+      ...(i.meta?.title ? { title: i.meta.title } : {}),
+      ...(i.meta?.desc ? { desc: i.meta.desc } : {}),
+      ...(i.meta?.date ? { date: i.meta.date } : {}),
+      ...(i.meta?.tags?.length ? { tags: i.meta.tags } : {}),
+      ...(i.meta?.fork ? { fork: i.meta.fork } : {}),
+      ...(i.meta?.pen ? { pen: i.meta.pen } : {})
     }))
     .sort((a, b) => a.framework.localeCompare(b.framework) || a.name.localeCompare(b.name))
 }
 
 export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite = '', homeUrl = ''): string {
-  const DATA = JSON.stringify(manifest)
+  // README-derived text is user-authored: escape `<` so a description containing
+  // "</script>" can't terminate the inline script element (JSON.stringify doesn't).
+  const DATA = JSON.stringify(manifest).replace(/</g, '\\u003c')
   // Optional "← home" link (config `homeUrl`) — set when the gallery is nested under a parent
   // site (e.g. `../`); omitted for standalone `fiddle preview`. Escaped for the HTML attribute.
   const homeLink = homeUrl
@@ -37,7 +63,7 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
     : ''
   // The landing fiddle (config `favorite`, as "<framework>/<name>"). Only honored if it
   // matches a real entry — otherwise the shell falls back to the "select a fiddle" prompt.
-  const FAV = JSON.stringify(favorite && manifest.some((m) => `${m.framework}/${m.name}` === favorite) ? favorite : '')
+  const FAV = JSON.stringify(favorite && manifest.some((m) => `${m.framework}/${m.name}` === favorite) ? favorite : '').replace(/</g, '\\u003c')
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -84,6 +110,18 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
   .toggle{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--phos-dim);background:transparent;border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
   .toggle:hover{color:var(--phos);border-color:var(--phos-dim)}
   .bar a{color:var(--phos-dim);text-decoration:none}.bar a:hover{color:var(--phos)}
+  /* README info card — the "what is this?" layer (parsed from each fiddle's README) */
+  .info{display:none;border-bottom:1px solid var(--line);background:var(--phos-bg);padding:10px 16px;font-family:var(--mono);max-height:138px;overflow-y:auto;position:relative}
+  .info::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0,rgba(0,0,0,.14) 1px,transparent 1px,transparent 3px);opacity:.5}
+  .info>*{position:relative}
+  .info .t{color:var(--phos);font-size:12.5px;font-weight:700;letter-spacing:.02em;text-shadow:0 0 6px rgba(51,255,51,.35)}
+  .info .d{color:var(--muted);font-size:11px;margin-left:8px}
+  .info .desc{color:var(--text);font-size:12px;line-height:1.55;margin-top:5px;max-width:92ch}
+  .info .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;align-items:center}
+  .info .tag{font-size:10px;color:var(--phos-dim);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap}
+  .info a{color:var(--phos-dim);text-decoration:none;font-size:11px;border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+  .info a:hover{color:var(--phos);border-color:var(--phos-dim)}
+  .info::-webkit-scrollbar{width:8px}.info::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
   .stage{flex:1;min-height:0;position:relative;padding:22px;background:radial-gradient(130% 90% at 50% 0%,#0d150d 0%,var(--ink) 72%)}
   .stage iframe{width:100%;height:100%;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 0 0 1px rgba(51,255,51,.05),0 20px 55px rgba(0,0,0,.55)}
   .code{display:none;position:absolute;inset:22px;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel);box-shadow:0 20px 55px rgba(0,0,0,.55)}
@@ -109,6 +147,7 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
       <button class="toggle" id="codeBtn" onclick="toggleCode()" style="display:none">&lt;/&gt; source</button>
       <a id="pop" href="#" target="_blank" style="display:none">open ↗</a>
     </div>
+    <div class="info" id="info"></div>
     <div class="empty" id="empty">select a fiddle from the left</div>
     <div class="stage" id="stage" style="display:none">
       <iframe id="frame"></iframe>
@@ -131,7 +170,33 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
   const nav = document.getElementById('nav'), frame = document.getElementById('frame'),
         empty = document.getElementById('empty'), cur = document.getElementById('cur'), pop = document.getElementById('pop'),
         stage = document.getElementById('stage'), code = document.getElementById('code'),
-        tabs = document.getElementById('tabs'), src = document.getElementById('src'), codeBtn = document.getElementById('codeBtn');
+        tabs = document.getElementById('tabs'), src = document.getElementById('src'), codeBtn = document.getElementById('codeBtn'),
+        info = document.getElementById('info');
+  // README info card — everything set via textContent (never innerHTML) so README
+  // content can't inject markup.
+  function renderInfo(f){
+    info.innerHTML='';
+    if(!(f.title || f.desc || (f.tags&&f.tags.length) || f.fork || f.pen)){ info.style.display='none'; return; }
+    const top=document.createElement('div');
+    const t=document.createElement('span'); t.className='t'; t.textContent=f.title||humanize(f.friendly); top.appendChild(t);
+    if(f.date){ const d=document.createElement('span'); d.className='d'; d.textContent='· '+f.date; top.appendChild(d); }
+    info.appendChild(top);
+    if(f.desc){ const p=document.createElement('div'); p.className='desc'; p.textContent=f.desc; info.appendChild(p); }
+    const meta=document.createElement('div'); meta.className='meta';
+    (f.tags||[]).forEach(function(tg){ const s=document.createElement('span'); s.className='tag'; s.textContent=tg; meta.appendChild(s); });
+    if(f.fork){
+      const parent=FIDDLES.find(x=>x.framework===f.framework&&x.name===f.fork);
+      if(parent){
+        const a=document.createElement('a'); a.href='#'+f.framework+'/'+f.fork;
+        a.textContent='↳ forked from '+(parent.title||humanize(parent.friendly));
+        a.onclick=function(e){ e.preventDefault(); open(parent, document.querySelector('.item[data-key="'+f.framework+'/'+f.fork+'"]')); };
+        meta.appendChild(a);
+      }
+    }
+    if(f.pen){ const a=document.createElement('a'); a.href=f.pen; a.target='_blank'; a.rel='noopener'; a.textContent='pen ↗'; meta.appendChild(a); }
+    if(meta.children.length) info.appendChild(meta);
+    info.style.display='block';
+  }
   let current = null, codeOn = false;
   function setView(showCode){
     codeOn = showCode;
@@ -144,7 +209,8 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
     document.querySelectorAll('.item.active').forEach(e=>e.classList.remove('active'));
     if(el){ el.classList.add('active'); const g=el.closest('.fw-group'); if(g) g.classList.add('open'); el.scrollIntoView({block:'nearest'}); }
     empty.style.display='none'; stage.style.display='block';
-    cur.textContent = f.framework + ' / ' + humanize(f.friendly);
+    cur.textContent = f.framework + ' / ' + (f.title || humanize(f.friendly));
+    renderInfo(f);
     if(f.live !== false){
       setView(false); frame.src=f.url;                 // land on the live demo
       pop.style.display='inline'; pop.href=f.url;
@@ -179,14 +245,23 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
     const isFav = (f.framework+'/'+f.name) === FAVORITE;
     const star = isFav ? '<span title="landing fiddle" style="margin-left:auto;color:var(--phos);font-size:11px;text-shadow:0 0 6px rgba(51,255,51,.6)">★</span>' : '';
     const tag = (!isFav && f.live===false) ? '<span style="margin-left:auto;color:var(--muted);font-size:9.5px;letter-spacing:.05em">src</span>' : '';
-    it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl">'+humanize(f.friendly)+'</div>'+star+tag;
+    it.innerHTML='<div class="thumb"'+(f.thumb?' style="background-image:url('+f.thumb+')"':'')+'></div><div class="lbl"></div>'+star+tag;
+    it.querySelector('.lbl').textContent = f.title || humanize(f.friendly); // textContent: titles come from READMEs
+    if(f.desc) it.title = f.desc; // hover tooltip answers "what is this?" before opening
     it.onclick=()=>open(f,it); return it;
   }
   function render(filter=''){
     filter = filter.trim().toLowerCase();
     const byFw = {};
+    // A filter that IS a framework name (the site's #three/#vue chips land here via
+    // landOnFramework) means that framework exactly — not every fiddle whose
+    // description mentions it.
+    const exactFw = filter && FIDDLES.some(f=>f.framework.toLowerCase()===filter);
     for(const f of FIDDLES){
-      if(filter && !(f.framework+' '+f.friendly+' '+humanize(f.friendly)).toLowerCase().includes(filter)) continue;
+      if(exactFw){ if(f.framework.toLowerCase()!==filter) continue; }
+      // Otherwise search the README-derived metadata too: title, description, tags —
+      // so "tooltip", "webgl", "tween" find fiddles whose dir name never says so.
+      else if(filter && !(f.framework+' '+f.friendly+' '+humanize(f.friendly)+' '+(f.title||'')+' '+(f.desc||'')+' '+((f.tags||[]).join(' '))).toLowerCase().includes(filter)) continue;
       (byFw[f.framework] ||= []).push(f);
     }
     nav.innerHTML='';

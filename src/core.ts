@@ -4,7 +4,18 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { REGISTRY, type TemplateEntry } from './registry.js'
 import { loadConfig, resolveHome } from './config.js'
-import { PLAYWRIGHT_CONFIG, SMOKE_SPEC, claudeMd } from './defaults.js'
+import { PLAYWRIGHT_CONFIG, SMOKE_SPEC, claudeMd, readmeMd } from './defaults.js'
+
+/** fiddle-0011-PlanetTween → "Planet Tween" — display title for a fresh README. */
+export function humanizeName(dirName: string): string {
+  return dirName
+    .replace(/^fiddle-\d+-/, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 export const TEMPLATES_DIR = path.resolve(HERE, '../templates')
@@ -130,8 +141,11 @@ export function copyFiddle(src: string, dest: string): void {
 }
 
 /** Inject the per-fiddle defaults: Playwright (browser fiddles only) + CLAUDE.md (all). */
-export function injectDefaults(dir: string, framework: string, name: string, browser: boolean): void {
+export function injectDefaults(dir: string, framework: string, name: string, browser: boolean, forkedFrom = ''): void {
   fs.writeFileSync(path.join(dir, 'CLAUDE.md'), claudeMd(framework, name))
+  // The classic structured README (### Title/Description/Tags/…) — the portfolio
+  // parses it for the gallery's info card. Replaces delegate-scaffolder boilerplate.
+  fs.writeFileSync(path.join(dir, 'README.md'), readmeMd(name, humanizeName(name), forkedFrom))
   if (!browser) return
   fs.writeFileSync(path.join(dir, 'playwright.config.ts'), PLAYWRIGHT_CONFIG)
   fs.mkdirSync(path.join(dir, 'tests'), { recursive: true })

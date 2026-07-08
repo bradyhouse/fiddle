@@ -54,6 +54,16 @@ fiddle publish                  # + push it to your configured repo
 portfolio shell** — phosphor/CRT aesthetic, sidebar grouped by framework, each fiddle live in an
 iframe, deep-linkable. Add a fiddle, `publish`, and it's *in the portfolio*. Zero manual plumbing.
 
+### The README is the story
+
+Each fiddle's `README.md` is parsed into the portfolio (`### Title` / `### Creation Date` /
+`### Description` / `### Tags` / `### Forked From` / `### Published Version Link` — the classic
+`fiddle.sh` sections, which `fiddle create`/`fork` scaffold for you). The gallery renders it as an
+**info card** — so every fiddle answers *"what is this?"* — makes it all **searchable** (title,
+description, tags), and turns `Forked From` into clickable **lineage links** between fiddles.
+Unstructured READMEs fall back to their first prose paragraph; a `description` field in
+`.fiddle.json` overrides either.
+
 ## The "both" provider model
 
 fiddle scaffolds from **two kinds of provider**, resolved by a single registry:

@@ -13,6 +13,7 @@ import {
   cwdFiddle,
   frameworkDir,
   getEntry,
+  humanizeName,
   inferStart,
   injectDefaults,
   listCollection,
@@ -26,8 +27,9 @@ import {
   tryShell,
   writeMeta
 } from './core.js'
-import { claudeMd } from './defaults.js'
+import { claudeMd, readmeMd } from './defaults.js'
 import { buildManifest, shellHtml, ManifestEntry } from './portfolio.js'
+import { readFiddleMeta, FiddleMeta } from './readme-meta.js'
 import { captureServed } from './screenshot.js'
 import { serveDir } from './serve.js'
 import { banner, c, nope } from './ui.js'
@@ -285,6 +287,12 @@ program
     const meta = readMeta(target)
     writeMeta(target, { ...meta, name: dirName, createdAt: new Date().toISOString() })
     fs.writeFileSync(path.join(target, 'CLAUDE.md'), claudeMd(framework, dirName))
+    // Fresh structured README with lineage — the classic fiddle.sh convention
+    // (### Forked From links the parent in the portfolio's info card). The parent's
+    // copied readme describes the PARENT, so it's replaced, not kept.
+    for (const rm of ['README.md', 'README.markdown', 'readme.md', 'readme.markdown'])
+      fs.rmSync(path.join(target, rm), { force: true })
+    fs.writeFileSync(path.join(target, 'README.md'), readmeMd(dirName, humanizeName(dirName), path.basename(srcDir)))
     if (opts.install) {
       console.log(c.dim('  installing…\n'))
       await runShell('npm install', target)
@@ -617,7 +625,15 @@ function sourceFiles(dir: string, max = 15): string[] {
  * index.html to fall back to). Resilient: one bad fiddle never aborts the run.
  * Shared by `publish` (→ a git repo) and `preview` (→ a scratch dir).
  */
-type AssembleItem = { framework: string; name: string; friendly: string; hasThumb: boolean; live: boolean; files: string[] }
+type AssembleItem = {
+  framework: string
+  name: string
+  friendly: string
+  hasThumb: boolean
+  live: boolean
+  files: string[]
+  meta: FiddleMeta | null // README-derived "what is this?" metadata (title/desc/date/tags/fork/pen)
+}
 
 // Remove dev-only publish junk (source maps + heavy video) from an assembled subtree — keeps
 // the portfolio small enough for a GitHub Pages site (~1GB). Runtime rendering is unaffected.
@@ -710,7 +726,15 @@ async function assembleFiddle(
   }
 
   return {
-    item: { framework: it.framework, name: it.name, friendly: friendly(it.dir), hasThumb: false, live, files },
+    item: {
+      framework: it.framework,
+      name: it.name,
+      friendly: friendly(it.dir),
+      hasThumb: false,
+      live,
+      files,
+      meta: readFiddleMeta(it.dir) // README → title/desc/date/tags/fork/pen for the manifest
+    },
     fwRes,
     siteRes,
     kind

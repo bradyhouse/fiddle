@@ -25,6 +25,47 @@ test('fiddle loads and renders', async ({ page }) => {
 })
 `
 
+// The classic fiddle.sh README template — structured sections the portfolio parses
+// (see readme-meta.ts) to answer "what is this?" in the gallery UI. Description is
+// left as an HTML comment (stripped by the parser) so an unedited README ships no
+// placeholder text.
+export const readmeMd = (name: string, friendlyTitle: string, forkedFrom = ''): string => {
+  const d = new Date()
+  const date = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`
+  return `${name}
+======
+
+### Title
+
+${friendlyTitle}
+
+
+### Creation Date
+
+${date}
+
+
+### Description
+
+<!-- What does this explore, and why? The portfolio surfaces this text. -->
+
+
+### Tags
+
+
+
+
+### Forked From
+
+${forkedFrom || 'n/a'}
+
+
+### Published Version Link
+
+n/a
+`
+}
+
 export const claudeMd = (framework: string, name: string): string => `# ${name}
 
 A **${framework}** fiddle — a throwaway sandbox for exploring one idea, scaffolded and

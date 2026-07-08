@@ -22,3 +22,36 @@ test('shellHtml is self-contained and embeds the fiddles', () => {
   assert.match(html, /spin/) // friendly label
   assert.doesNotMatch(html, /<script[^>]+src=/) // no external scripts — deploys to any static host offline
 })
+
+test('README metadata flows into the manifest; hostile text cannot break the inline script', () => {
+  const m = buildManifest([
+    {
+      framework: 'three',
+      name: 'fiddle-0001-a',
+      friendly: 'a',
+      hasThumb: false,
+      meta: {
+        title: 'Planet Tween',
+        desc: 'evil </script><img src=x onerror=alert(1)> description',
+        date: '01/18/2016',
+        tags: ['three.js'],
+        fork: 'fiddle-0000-parent',
+        pen: 'https://codepen.io/x'
+      }
+    }
+  ])
+  assert.equal(m[0].title, 'Planet Tween')
+  assert.equal(m[0].fork, 'fiddle-0000-parent')
+  const html = shellHtml(m)
+  // the ONLY "</script>" in the page is the shell's own closing tag — README text
+  // is embedded with `<` escaped, so it can't terminate the script element.
+  assert.equal(html.split('</script>').length, 2)
+  assert.match(html, /\\u003c\/script/) // the hostile desc arrived, escaped
+})
+
+test('empty meta fields are omitted from the manifest (kept lean)', () => {
+  const m = buildManifest([
+    { framework: 'vue', name: 'fiddle-0001-b', friendly: 'b', hasThumb: false, meta: null }
+  ])
+  assert.ok(!('title' in m[0]) && !('desc' in m[0]) && !('tags' in m[0]))
+})
