@@ -82,7 +82,8 @@ export async function captureServed(
   repo: string,
   entries: { framework: string; name: string }[],
   port = 4599,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  base = '/'
 ): Promise<{ done: Set<string>; broken: Set<string> }> {
   const done = new Set<string>()
   const broken = new Set<string>() // errored AND rendered nothing → demote to source-only
@@ -92,7 +93,28 @@ export async function captureServed(
   } catch {
     return { done, broken } // playwright not installed — portfolio falls back to placeholder thumbs
   }
-  const server = await serveDir(repo, port).catch(() => null)
+  // When the gallery is mounted under a path (publishBase, e.g. /fiddles/), built
+  // fiddles bake ABSOLUTE /fiddles/f/… refs — so serve the repo's PARENT tree and
+  // load pages at the mount path, exactly like production. Requires the repo dir's
+  // trailing path to spell the mount (…/site/fiddles ↔ /fiddles/) — else fall back
+  // to root-serving with a warning (thumbnails of built fiddles may 404 assets).
+  let serveRoot = repo
+  if (base !== '/') {
+    const segs = base.split('/').filter(Boolean)
+    let root = repo
+    let ok = true
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (path.basename(root) !== segs[i]) {
+        ok = false
+        break
+      }
+      root = path.dirname(root)
+    }
+    if (ok) serveRoot = root
+    else console.warn(`  ! publishBase ${base} doesn't match ${repo} — screenshotting root-served (assets may 404)`)
+  }
+  const urlBase = serveRoot === repo ? '/' : base
+  const server = await serveDir(serveRoot, port).catch(() => null)
   if (!server) return { done, broken }
   const thumbs = path.join(repo, 'thumbs')
   fs.mkdirSync(thumbs, { recursive: true })
@@ -109,7 +131,7 @@ export async function captureServed(
       errored = false
       try {
         await page
-          .goto(`http://localhost:${port}/f/${e.framework}/${e.name}/`, { waitUntil: 'networkidle', timeout: 10_000 })
+          .goto(`http://localhost:${port}${urlBase}f/${e.framework}/${e.name}/`, { waitUntil: 'networkidle', timeout: 10_000 })
           .catch(() => {})
         // networkidle fires when the last request settles, but canvas/WebGL demos (fabric
         // image clouds, three.js scenes) then fetch textures and paint on the next frames.

@@ -262,3 +262,57 @@ export function openTerminal(dir: string): void {
     spawnDetached('x-terminal-emulator', ['--working-directory', dir])
   }
 }
+
+/** Normalize a gallery mount path: '', '/', undefined → '/'; 'fiddles' → '/fiddles/'. */
+export function normalizeBase(base?: string): string {
+  const b = (base || '').trim().replace(/^\/+|\/+$/g, '')
+  return b ? `/${b}/` : '/'
+}
+
+export function rebaseBuiltDist(dest: string, framework: string, name: string, base = '/'): void {
+  const baked = `/${framework}/${name}/`
+  // The FULL public path of this fiddle — including the gallery's mount path
+  // (`publishBase`, e.g. `/fiddles/` on a nested GitHub Pages site). Root-relative
+  // rewrites that ignore the mount 404 everywhere except a root-served preview.
+  const served = `${base}f/${framework}/${name}/`
+  const idxPath = path.join(dest, 'index.html')
+  if (!fs.existsSync(idxPath)) return
+  // Rewrite two baked-in path forms across all text assets:
+  //  1. Absolute-base builds (e.g. vite `base: '/vue/<name>/'`): the deploy path is baked into
+  //     asset URLs AND the SPA router base → rewrite `/<fw>/<name>/` to the `/f/` served path.
+  //  2. Relative-base SPA builds (vite `base: './'`): assets resolve fine via `./`, but the router
+  //     base is baked as `createWebHistory("./")` which vue-router normalizes to "/." and never
+  //     matches the /f/<fw>/<name>/ serve path → the app renders its 404 route. Repoint that base.
+  // (Both are no-ops when absent, so this is safe to run on every built fiddle.)
+  const rewriteHistory = /history:\w+\("\.\/"\)/
+  const walk = (d: string): void => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name)
+      if (e.isDirectory()) walk(p)
+      else if (/\.(html?|c?js|mjs|css|json|map|svg|txt|webmanifest)$/i.test(e.name)) {
+        try {
+          const b = fs.readFileSync(p, 'utf8')
+          let out = b
+          if (out.includes(baked)) out = out.split(baked).join(served)
+          if (rewriteHistory.test(out)) out = out.replace(/(history:\w+\(")\.\/("\))/g, `$1${served}$2`)
+          if (out !== b) fs.writeFileSync(p, out)
+        } catch {
+          /* skip unreadable/binary */
+        }
+      }
+    }
+  }
+  walk(dest)
+  // AFTER the walk (so `served` isn't re-prefixed — `baked` is a substring of `served`):
+  // Angular-CLI builds ship `<base href="/">` with RELATIVE asset refs, so main-*.js/
+  // styles-*.css resolve against the site root and 404 under /f/<fw>/<name>/. Repoint
+  // the base at the served dir so they resolve.
+  try {
+    const idx = fs.readFileSync(idxPath, 'utf8')
+    if (/<base\s+href="\/"\s*\/?>/i.test(idx)) {
+      fs.writeFileSync(idxPath, idx.replace(/(<base\s+href=")\/("\s*\/?>)/i, `$1${served}$2`))
+    }
+  } catch {
+    /* no index / unreadable */
+  }
+}

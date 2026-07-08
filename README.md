@@ -107,6 +107,7 @@ Settings live in `~/.fiddle/config.json` (env overrides: `FIDDLE_HOME`, `FIDDLE_
 |---|---|---|
 | `home` | `~/fiddles` | where the collection lives |
 | `publishRepo` | _unset_ | portfolio publish target (a git working dir — use a subdir) |
+| `publishBase` | `/` | URL path the published gallery is **mounted** at (e.g. `/fiddles/` when nested under a site) — built fiddles bake absolute paths, so this must match production |
 | `favorite` | _unset_ | the fiddle the portfolio landing opens on, as `<framework>/<name>` |
 | `homeUrl` | _unset_ | a "← home" link in the gallery header (e.g. `../` when nested under a site) |
 | `editor` | `code` | opened by `fiddle edit` |

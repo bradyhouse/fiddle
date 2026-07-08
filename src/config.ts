@@ -14,6 +14,8 @@ export interface FiddleConfig {
   favorite?: string
   /** URL for a "← home" link in the gallery header (e.g. `../` when nested under a parent site); unset = no link */
   homeUrl?: string
+  /** URL path where the published gallery is MOUNTED (e.g. `/fiddles/` when nested under a site) — baked into rebased built fiddles' absolute paths; default `/` */
+  publishBase?: string
   [key: string]: string | undefined
 }
 
@@ -32,6 +34,7 @@ export const CONFIG_KEYS: ConfigKeyInfo[] = [
   { key: 'publishRepo', desc: 'portfolio publish target — a git working dir' },
   { key: 'favorite', desc: 'fiddle featured on the portfolio landing page, as <framework>/<name>' },
   { key: 'homeUrl', desc: 'URL for a "← home" link in the gallery header (e.g. ../ when nested under a site)' },
+  { key: 'publishBase', desc: 'URL path the published gallery is mounted at (e.g. /fiddles/ when nested under a site)', default: '/' },
   { key: 'editor', desc: 'editor command opened by `fiddle edit`', default: 'code' },
   { key: 'terminal', desc: 'terminal app spawned by `fiddle edit` (macOS)', default: 'Terminal' }
 ]

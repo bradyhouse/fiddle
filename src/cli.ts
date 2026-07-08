@@ -21,7 +21,9 @@ import {
   openInEditor,
   openTerminal,
   openUrl,
+  normalizeBase,
   readMeta,
+  rebaseBuiltDist,
   resolveFiddle,
   runShell,
   tryShell,
@@ -506,50 +508,6 @@ function builtDir(dir: string): string | null {
 // to the served location across every text file in the copied build (no rebuild —
 // vite/CRA configs hard-code the base and often no longer build). Absolute→absolute
 // so it's depth-independent; assumes the portfolio is served at the domain root.
-function rebaseBuiltDist(dest: string, framework: string, name: string): void {
-  const baked = `/${framework}/${name}/`
-  const served = `/f/${framework}/${name}/`
-  const idxPath = path.join(dest, 'index.html')
-  if (!fs.existsSync(idxPath)) return
-  // Rewrite two baked-in path forms across all text assets:
-  //  1. Absolute-base builds (e.g. vite `base: '/vue/<name>/'`): the deploy path is baked into
-  //     asset URLs AND the SPA router base → rewrite `/<fw>/<name>/` to the `/f/` served path.
-  //  2. Relative-base SPA builds (vite `base: './'`): assets resolve fine via `./`, but the router
-  //     base is baked as `createWebHistory("./")` which vue-router normalizes to "/." and never
-  //     matches the /f/<fw>/<name>/ serve path → the app renders its 404 route. Repoint that base.
-  // (Both are no-ops when absent, so this is safe to run on every built fiddle.)
-  const rewriteHistory = /history:\w+\("\.\/"\)/
-  const walk = (d: string): void => {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      const p = path.join(d, e.name)
-      if (e.isDirectory()) walk(p)
-      else if (/\.(html?|c?js|mjs|css|json|map|svg|txt|webmanifest)$/i.test(e.name)) {
-        try {
-          const b = fs.readFileSync(p, 'utf8')
-          let out = b
-          if (out.includes(baked)) out = out.split(baked).join(served)
-          if (rewriteHistory.test(out)) out = out.replace(/(history:\w+\(")\.\/("\))/g, `$1${served}$2`)
-          if (out !== b) fs.writeFileSync(p, out)
-        } catch {
-          /* skip unreadable/binary */
-        }
-      }
-    }
-  }
-  walk(dest)
-  // AFTER the walk (so `served` isn't re-prefixed — `baked` is a substring of `served`):
-  // Angular-CLI builds ship `<base href="/">` with RELATIVE asset refs, so main-*.js/
-  // styles-*.css resolve against the site root and 404 under /f/<fw>/<name>/. Repoint
-  // the base at the served dir so they resolve.
-  try {
-    const idx = fs.readFileSync(idxPath, 'utf8')
-    if (/<base\s+href="\/"\s*\/?>/i.test(idx)) {
-      fs.writeFileSync(idxPath, idx.replace(/(<base\s+href=")\/("\s*\/?>)/i, `$1${served}$2`))
-    }
-  } catch {
-    /* no index / unreadable */
-  }
-}
 
 // Many old fiddles embed a "Fork me on GitHub" ribbon <img> from
 // s3.amazonaws.com/github/ribbons/, which GitHub removed years ago → a broken-image
@@ -666,7 +624,8 @@ function stripPublishJunk(dir: string): { maps: number; media: number; bytes: nu
 async function assembleFiddle(
   repo: string,
   it: { framework: string; name: string; dir: string },
-  doBuild: boolean
+  doBuild: boolean,
+  base = '/'
 ): Promise<{ item: AssembleItem; fwRes: [string, string] | null; siteRes: string | null; kind: 'built' | 'static' | 'src' } | null> {
   let start: string
   try {
@@ -700,7 +659,7 @@ async function assembleFiddle(
       fs.rmSync(dest, { recursive: true, force: true })
       fs.mkdirSync(dest, { recursive: true })
       fs.cpSync(out, dest, { recursive: true })
-      rebaseBuiltDist(dest, it.framework, it.name)
+      rebaseBuiltDist(dest, it.framework, it.name, base)
       hideDeadRibbons(dest)
       rendered = true
       kind = 'built'
@@ -762,7 +721,8 @@ async function assembleOne(
   repo: string,
   name: string,
   screenshots: boolean,
-  doBuild: boolean
+  doBuild: boolean,
+  base = '/'
 ): Promise<{ framework: string; name: string; live: boolean; hasThumb: boolean; isNew: boolean }> {
   const manifestPath = path.join(repo, 'manifest.json')
   if (!fs.existsSync(manifestPath)) {
@@ -771,7 +731,7 @@ async function assembleOne(
   const it = listCollection().find((x) => x.name === name || friendly(x.dir) === name || `${x.framework}/${x.name}` === name)
   if (!it) throw new Error(`no fiddle matching "${name}" — see \`fiddle list\``)
 
-  const r = await assembleFiddle(repo, it, doBuild)
+  const r = await assembleFiddle(repo, it, doBuild, base)
   if (!r) throw new Error(`nothing to assemble for ${it.framework}/${it.name}`)
 
   // Ensure the shared resource trees this fiddle references exist (copy if missing).
@@ -782,7 +742,7 @@ async function assembleOne(
   stripPublishJunk(path.join(fRoot, it.framework, it.name))
 
   if (screenshots && r.item.live) {
-    const shot = await captureServed(repo, [r.item], 4599)
+    const shot = await captureServed(repo, [r.item], 4599, undefined, base)
     if (shot.done.has(`${it.framework}/${it.name}`)) r.item.hasThumb = true
     if (shot.broken.has(`${it.framework}/${it.name}`)) {
       // broken-live → demote to a browsable source-only card
@@ -813,7 +773,7 @@ async function assembleOne(
   return { framework: it.framework, name: it.name, live: r.item.live, hasThumb: r.item.hasThumb, isNew }
 }
 
-async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: boolean): Promise<AssembleResult> {
+async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: boolean, base = '/'): Promise<AssembleResult> {
   const all = listCollection()
   if (!all.length) {
     console.log(c.dim('  (no fiddles yet — `fiddle create <framework> <name>` or `fiddle adopt`)\n'))
@@ -835,7 +795,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
   const sharedSiteRes = new Set<string>() // site-root resources/ source dir(s)
 
   for (const it of all) {
-    const r = await assembleFiddle(repo, it, doBuild)
+    const r = await assembleFiddle(repo, it, doBuild, base)
     if (!r) {
       skipped++
       continue
@@ -877,7 +837,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
   if (screenshots) {
     const liveItems = items.filter((i) => i.live)
     console.log(c.dim(`  📸 thumbnailing ${liveItems.length} live fiddles…`))
-    const shot = await captureServed(repo, liveItems, 4599, (d, t) => console.log(c.dim(`     ${d}/${t}`)))
+    const shot = await captureServed(repo, liveItems, 4599, (d, t) => console.log(c.dim(`     ${d}/${t}`)), base)
     for (const i of items) if (shot.done.has(`${i.framework}/${i.name}`)) i.hasThumb = true
     console.log(c.dim(`  📸 ${shot.done.size} thumbnails captured`))
     // Demote broken-live fiddles (errored + blank) to browsable source-only cards — no dead thumbs.
@@ -962,12 +922,16 @@ program
   .action(async (name, opts) => {
     const repo = process.env.FIDDLE_PUBLISH_REPO || loadConfig().publishRepo
     if (!repo) throw new Error('no target — run `fiddle config set publishRepo <dir>` first (or `fiddle preview` to look first)')
+    // The gallery's public mount path (config `publishBase`, e.g. `/fiddles/` when
+    // nested under a site) — baked into rebased built fiddles' absolute paths.
+    const base = normalizeBase(loadConfig().publishBase)
     console.log(banner('publish'))
+    if (base !== '/') console.log(c.dim(`  mounted at ${base}`))
     if (name) {
-      const u = await assembleOne(repo, name, opts.screenshots, opts.build)
+      const u = await assembleOne(repo, name, opts.screenshots, opts.build, base)
       console.log(`\n  ✓ updated ${c.green(`${u.framework}/${u.name}`)} ${c.dim(`(${u.isNew ? 'new · ' : ''}${u.live ? 'live' : 'source-only'}${u.hasThumb ? ' · thumbnail' : ''}) → ${repo}`)}`)
     } else {
-      const r = await assemblePortfolio(repo, opts.screenshots, opts.build)
+      const r = await assemblePortfolio(repo, opts.screenshots, opts.build, base)
       if (!r.count) return
       console.log(
         `\n  ✓ ${c.green(String(r.count))} fiddles ${c.dim(`(${r.staticCount} static · ${r.built} built · ${r.srcOnly} source · ${r.skipped} skipped)`)} → ${c.dim(repo)}`
