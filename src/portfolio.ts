@@ -75,7 +75,7 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
     --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
-  body{background:var(--ink);color:var(--text);font-family:var(--sans);display:grid;grid-template-columns:300px 1fr;grid-template-rows:auto 1fr;height:100vh;overflow:hidden}
+  body{background:var(--ink);color:var(--text);font-family:var(--sans);display:grid;grid-template-columns:300px 1fr;grid-template-rows:auto 1fr;height:100vh;height:100dvh;overflow:hidden}
   /* header */
   header{grid-column:1/-1;background:var(--phos-bg);border-bottom:1px solid var(--line);position:relative;overflow:hidden;padding:14px 20px;font-family:var(--mono);display:flex;align-items:center;justify-content:space-between;gap:16px}
   header::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0,rgba(0,0,0,.2) 1px,transparent 1px,transparent 3px);opacity:.6}
@@ -134,10 +134,30 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
   .code pre{margin:0;flex:1;overflow:auto;padding:16px 18px;font-family:var(--mono);font-size:12.5px;line-height:1.55;color:var(--text);white-space:pre;tab-size:2}
   .empty{flex:1;display:grid;place-items:center;color:var(--muted);font-family:var(--mono);font-size:13px}
   aside::-webkit-scrollbar{width:8px}aside::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+  /* mobile: the 300px sidebar becomes an off-canvas drawer; the stage gets the screen */
+  .menuBtn{display:none;background:transparent;border:1px solid var(--line);border-radius:6px;color:var(--phos);font-size:16px;padding:4px 10px;cursor:pointer;flex:none;font-family:var(--mono)}
+  .backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40}
+  @media(max-width:720px){
+    body{grid-template-columns:1fr}
+    header{padding:10px 12px;gap:10px}
+    header h1{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    header h1 .dim2{display:none} /* the "— a decade of build-to-learn" tail */
+    .menuBtn{display:inline-block}
+    aside{position:fixed;top:0;bottom:0;left:0;width:min(84vw,320px);z-index:50;background:var(--ink);
+      transform:translateX(-105%);transition:transform .2s ease;box-shadow:12px 0 40px rgba(0,0,0,.5)}
+    body.nav-open aside{transform:translateX(0)}
+    body.nav-open .backdrop{display:block}
+    .bar{padding:7px 10px;font-size:11px;flex-wrap:wrap}
+    .stage{padding:10px}
+    .code{inset:10px}
+    .info{padding:8px 12px}
+    .info .desc{-webkit-line-clamp:3}
+  }
 </style>
 </head>
 <body>
-  <header><h1>brady@house<span class="dim">:~/</span>fiddles<span class="dim"> — a decade of build-to-learn</span></h1>${homeLink}</header>
+  <header><button class="menuBtn" onclick="toggleNav()" aria-label="browse fiddles">☰</button><h1>brady@house<span class="dim">:~/</span>fiddles<span class="dim dim2"> — a decade of build-to-learn</span></h1>${homeLink}</header>
+  <div class="backdrop" onclick="toggleNav(false)"></div>
   <aside>
     <input class="search" placeholder="search framework or fiddle…" oninput="render(this.value)">
     <div id="nav"></div>
@@ -216,8 +236,11 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
     frame.style.display = showCode ? 'none' : 'block';
     codeBtn.textContent = showCode ? '▶ preview' : '</> source';
   }
+  // Mobile drawer: ☰ toggles the sidebar; picking a fiddle closes it.
+  function toggleNav(force){ document.body.classList.toggle('nav-open', force); }
   function open(f, el){
     current = f;
+    toggleNav(false);
     document.querySelectorAll('.item.active').forEach(e=>e.classList.remove('active'));
     if(el){ el.classList.add('active'); const g=el.closest('.fw-group'); if(g) g.classList.add('open'); el.scrollIntoView({block:'nearest'}); }
     empty.style.display='none'; stage.style.display='block';
