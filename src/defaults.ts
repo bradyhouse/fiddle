@@ -69,7 +69,7 @@ n/a
 export const claudeMd = (framework: string, name: string): string => `# ${name}
 
 A **${framework}** fiddle — a throwaway sandbox for exploring one idea, scaffolded and
-managed with [fiddle](https://github.com/bradyhouse/fiddle).
+managed with [fiddle](https://github.com/hetalhouse/fiddle).
 
 ## Run it
 \`\`\`bash

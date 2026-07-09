@@ -1,6 +1,6 @@
 {
   "name": "@hetalhouse/fiddle",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Scaffold and run throwaway framework sandboxes ('fiddles') — delegates to official scaffolders (Vite, Angular CLI…) where they exist, ships curated templates where they don't.",
   "type": "module",
   "bin": {
@@ -38,12 +38,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bradyhouse/fiddle.git"
+    "url": "git+https://github.com/hetalhouse/fiddle.git"
   },
   "bugs": {
-    "url": "https://github.com/bradyhouse/fiddle/issues"
+    "url": "https://github.com/hetalhouse/fiddle/issues"
   },
-  "homepage": "https://github.com/bradyhouse/fiddle#readme",
+  "homepage": "https://github.com/hetalhouse/fiddle#readme",
   "publishConfig": {
     "access": "public"
   },
