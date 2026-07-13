@@ -52,7 +52,13 @@ export function buildManifest(
     .sort((a, b) => a.framework.localeCompare(b.framework) || a.name.localeCompare(b.name))
 }
 
-export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite = '', homeUrl = ''): string {
+export function shellHtml(
+  manifest: ManifestEntry[],
+  title = 'fiddles',
+  favorite = '',
+  homeUrl = '',
+  meta: { siteUrl?: string; ogImage?: string } = {}
+): string {
   // README-derived text is user-authored: escape `<` so a description containing
   // "</script>" can't terminate the inline script element (JSON.stringify doesn't).
   const DATA = JSON.stringify(manifest).replace(/</g, '\\u003c')
@@ -64,11 +70,35 @@ export function shellHtml(manifest: ManifestEntry[], title = 'fiddles', favorite
   // The landing fiddle (config `favorite`, as "<framework>/<name>"). Only honored if it
   // matches a real entry — otherwise the shell falls back to the "select a fiddle" prompt.
   const FAV = JSON.stringify(favorite && manifest.some((m) => `${m.framework}/${m.name}` === favorite) ? favorite : '').replace(/</g, '\\u003c')
+  // Link-preview (Open Graph) meta — emitted only when config `siteUrl` is set, since
+  // og:url/og:image must be absolute. The description is derived from the manifest so
+  // it stays current without configuration.
+  const attr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+  const nFw = new Set(manifest.map((m) => m.framework)).size
+  const nLive = manifest.filter((m) => m.live).length
+  const ogDesc = `${manifest.length} interactive fiddles across ${nFw} frameworks (${nLive} running live) — a browsable, forkable build-to-learn collection.`
+  const ogMeta = meta.siteUrl
+    ? `
+<!-- link previews (LinkedIn / iMessage / Slack / social) -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="${attr(meta.siteUrl)}">
+<meta property="og:title" content="${attr(`${title} · Brady House`)}">
+<meta property="og:description" content="${attr(ogDesc)}">${
+        meta.ogImage
+          ? `
+<meta property="og:image" content="${attr(meta.ogImage)}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">`
+          : ''
+      }
+<meta name="description" content="${attr(ogDesc)}">`
+    : ''
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} · Brady House</title>
+<title>${title} · Brady House</title>${ogMeta}
 <style>
   :root{--phos:#33ff33;--phos-dim:#1f9d1f;--cursor:#80ff80;--phos-bg:#060d06;--ink:#080c08;
     --panel:#0f160f;--panel-2:#131c13;--line:#1d2a1d;--text:#d7e6d7;--muted:#7f947f;

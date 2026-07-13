@@ -768,7 +768,7 @@ async function assembleOne(
   merged.sort((a, b) => a.framework.localeCompare(b.framework) || a.name.localeCompare(b.name))
   fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2) + '\n')
   const cfg = loadConfig()
-  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(merged, 'fiddles', cfg.favorite, cfg.homeUrl))
+  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(merged, 'fiddles', cfg.favorite, cfg.homeUrl, { siteUrl: cfg.siteUrl, ogImage: cfg.ogImage }))
 
   return { framework: it.framework, name: it.name, live: r.item.live, hasThumb: r.item.hasThumb, isNew }
 }
@@ -869,7 +869,7 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
   const manifest = buildManifest(items)
   fs.writeFileSync(path.join(repo, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
   const cfg = loadConfig()
-  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest, 'fiddles', cfg.favorite, cfg.homeUrl))
+  fs.writeFileSync(path.join(repo, 'index.html'), shellHtml(manifest, 'fiddles', cfg.favorite, cfg.homeUrl, { siteUrl: cfg.siteUrl, ogImage: cfg.ogImage }))
   return { count: manifest.length, staticCount, built, srcOnly, skipped }
 }
 

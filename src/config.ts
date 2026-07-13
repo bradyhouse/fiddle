@@ -16,6 +16,10 @@ export interface FiddleConfig {
   homeUrl?: string
   /** URL path where the published gallery is MOUNTED (e.g. `/fiddles/` when nested under a site) — baked into rebased built fiddles' absolute paths; default `/` */
   publishBase?: string
+  /** absolute URL the published gallery is served at (e.g. `https://user.github.io/fiddles/`) — enables link-preview (Open Graph) meta in the gallery head; unset = no meta emitted */
+  siteUrl?: string
+  /** absolute URL of a 1200×630 preview image for link cards (og:image); only used when `siteUrl` is set */
+  ogImage?: string
   [key: string]: string | undefined
 }
 
@@ -35,6 +39,8 @@ export const CONFIG_KEYS: ConfigKeyInfo[] = [
   { key: 'favorite', desc: 'fiddle featured on the portfolio landing page, as <framework>/<name>' },
   { key: 'homeUrl', desc: 'URL for a "← home" link in the gallery header (e.g. ../ when nested under a site)' },
   { key: 'publishBase', desc: 'URL path the published gallery is mounted at (e.g. /fiddles/ when nested under a site)', default: '/' },
+  { key: 'siteUrl', desc: 'absolute URL the gallery is served at — enables Open Graph link-preview meta' },
+  { key: 'ogImage', desc: 'absolute URL of a 1200×630 og:image for link cards (needs siteUrl)' },
   { key: 'editor', desc: 'editor command opened by `fiddle edit`', default: 'code' },
   { key: 'terminal', desc: 'terminal app spawned by `fiddle edit` (macOS)', default: 'Terminal' }
 ]

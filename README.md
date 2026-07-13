@@ -110,6 +110,8 @@ Settings live in `~/.fiddle/config.json` (env overrides: `FIDDLE_HOME`, `FIDDLE_
 | `publishBase` | `/` | URL path the published gallery is **mounted** at (e.g. `/fiddles/` when nested under a site) — built fiddles bake absolute paths, so this must match production |
 | `favorite` | _unset_ | the fiddle the portfolio landing opens on, as `<framework>/<name>` |
 | `homeUrl` | _unset_ | a "← home" link in the gallery header (e.g. `../` when nested under a site) |
+| `siteUrl` | _unset_ | absolute URL the gallery is served at — when set, the gallery head gets Open Graph link-preview meta (title + auto-generated description from the manifest) |
+| `ogImage` | _unset_ | absolute URL of a 1200×630 preview image for link cards (used with `siteUrl`) |
 | `editor` | `code` | opened by `fiddle edit` |
 | `terminal` | `Terminal` | spawned by `fiddle edit` (macOS) |
 
