@@ -201,7 +201,7 @@ export function shellHtml(
     <div class="info" id="info"></div>
     <div class="empty" id="empty">select a fiddle from the left</div>
     <div class="stage" id="stage" style="display:none">
-      <iframe id="frame"></iframe>
+      <iframe id="frame" allowfullscreen allow="fullscreen"></iframe>
       <div class="code" id="code"><div class="tabs" id="tabs"></div><pre id="src"></pre></div>
     </div>
   </main>

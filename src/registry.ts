@@ -39,6 +39,14 @@ const builtin = (dir: string, label: string, start = 'npm run dev'): TemplateEnt
 export const REGISTRY: Record<string, TemplateEntry> = {
   // ── delegate → official Vite templates (always current) ──
   react: vite('react-ts', 'React + Vite (TS)'),
+  // Angular's canonical scaffolder is the Angular CLI (not create-vite).
+  // Pinned @19: Angular 20+ requires Node 22, ahead of this box's runtime.
+  angular: {
+    provider: 'delegate',
+    run: 'npm create @angular@19 {name} -- --defaults --skip-git --skip-install --style=css --ssr=false',
+    start: 'npm start',
+    label: 'Angular 19 (CLI, standalone)'
+  },
   vue: vite('vue-ts', 'Vue 3 + Vite (TS)'),
   svelte: vite('svelte-ts', 'Svelte + Vite (TS)'),
   solid: vite('solid-ts', 'Solid + Vite (TS)'),
