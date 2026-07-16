@@ -834,6 +834,15 @@ async function assemblePortfolio(repo: string, screenshots: boolean, doBuild: bo
   // Thumbnails: screenshot the assembled, SERVED portfolio (correct for rebased
   // builds + static fiddles; one server for all — not a dev server per fiddle).
   // Only LIVE fiddles have a rendered page to shoot.
+  // Seed hasThumb from thumb files ALREADY on disk — so a --no-screenshots
+  // publish (or a screenshot pass that captures nothing) preserves existing
+  // thumbnails instead of nulling all of them in the manifest. Screenshots
+  // only ADD/refresh from here; they are no longer the sole source of truth.
+  // (This is the bug that blanked ~241 gallery icons on 2026-07-16.)
+  for (const i of items) {
+    if (fs.existsSync(path.join(repo, 'thumbs', `${i.framework}__${i.name}.png`))) i.hasThumb = true
+  }
+
   if (screenshots) {
     const liveItems = items.filter((i) => i.live)
     console.log(c.dim(`  📸 thumbnailing ${liveItems.length} live fiddles…`))
