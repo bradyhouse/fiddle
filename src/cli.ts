@@ -575,6 +575,53 @@ function sourceFiles(dir: string, max = 15): string[] {
   return out.sort((a, b) => (a === 'index.html' ? -1 : b === 'index.html' ? 1 : a.localeCompare(b)))
 }
 
+// Directories whose contents are build artifacts / deps, never source to show.
+const SRC_SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.git', '.angular', 'coverage', '.vite'])
+// Noise files that add nothing to a source view.
+const SRC_SKIP_FILES = new Set(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'claude.md'])
+
+/**
+ * For a BUILT fiddle, the served tree holds only the compiled dist — so the
+ * "source" view has nothing but the README. Copy a curated set of the ORIGINAL
+ * source files into the served tree (skipping deps/build output) and return
+ * their relative paths for files[]. Never clobbers a built artifact of the same
+ * name (e.g. the compiled index.html) — collisions are skipped.
+ */
+function copySourceForViewing(srcDir: string, dest: string, max = 40): string[] {
+  const out: string[] = []
+  const walk = (d: string, rel = ''): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (out.length >= max) return
+      if (e.name.startsWith('.') || SRC_SKIP_DIRS.has(e.name)) continue
+      if (SRC_SKIP_FILES.has(e.name.toLowerCase())) continue
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (e.isDirectory()) {
+        walk(path.join(d, e.name), r)
+      } else if (SRC_EXT.has(path.extname(e.name).toLowerCase())) {
+        const from = path.join(d, e.name)
+        const to = path.join(dest, r)
+        try {
+          if (fs.statSync(from).size > 200_000) continue
+          if (fs.existsSync(to)) continue // never overwrite a built artifact
+          fs.mkdirSync(path.dirname(to), { recursive: true })
+          fs.copyFileSync(from, to)
+          out.push(r)
+        } catch {
+          /* skip unreadable */
+        }
+      }
+    }
+  }
+  walk(srcDir)
+  return out.sort((a, b) => a.localeCompare(b))
+}
+
 /**
  * Assemble the whole collection into `repo` and (re)generate the portfolio.
  * Each fiddle is either **built** (has a build script; attempted when `doBuild`,
@@ -661,6 +708,9 @@ async function assembleFiddle(
       fs.cpSync(out, dest, { recursive: true })
       rebaseBuiltDist(dest, it.framework, it.name, base)
       hideDeadRibbons(dest)
+      // A built fiddle serves only its compiled dist — also ship the original
+      // source so the gallery's "source" view shows real code, not the bundle.
+      files = copySourceForViewing(it.dir, dest)
       rendered = true
       kind = 'built'
     }
